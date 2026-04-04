@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Сценарии</h1>
+<div class="card">
+  <h2>Первый шаг бота (/start)</h2>
+  {% if start_scenario %}
+    <p>Найден стартовый шаг: <strong>ID {{ start_scenario.id }}</strong>. Нажмите «Редактировать» у этого шага в таблице ниже.</p>
+  {% else %}
+    <p class="error">Стартовый шаг не создан. Создайте его, чтобы бот отправлял первое сообщение по команде <code>/start</code>.</p>
+    <button type="button" onclick="createStartScenario()">Создать /start шаг</button>
+  {% endif %}
+</div>
+<div class="card">
+  <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="buildButtonsJson('scenario')">
+    <input id="scenario-id-input" type="number" name="scenario_id" placeholder="ID (для редактирования)" />
+    <input type="text" name="trigger_text" placeholder="Триггер" required />
+    <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
+    <label>Изображение шага: <input type="file" name="scenario_image" accept="image/*" /></label>
+    <input type="hidden" name="existing_image_path" id="existing-image-path" />
+    <small id="existing-image-label"></small>
+
+    <h3>Кнопки сценария</h3>
+    <div id="scenario-buttons"></div>
+    <div class="button-row-actions">
+      <button type="button" onclick="addButtonRow('scenario-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="scenario-buttons-json" type="hidden" name="buttons_json" />
+
+    <input type="number" name="next_step" placeholder="Следующий шаг (ID)" />
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Карта переходов (иерархия шагов)</h2>
+  <p class="muted">Здесь отображаются связи между шагами: из поля «След. шаг» и из кнопок типа «Шаг (ID)».</p>
+  <svg id="graph-view" width="100%" height="280"></svg>
+  <table>
+    <tr><th>Шаг</th><th>Триггер</th><th>Переходы</th></tr>
+    {% for branch in scenario_branches %}
+    <tr>
+      <td>{{ branch.id }}</td>
+      <td>{{ branch.trigger_text }}</td>
+      <td>
+        {% if branch.transitions %}
+          {% for target in branch.transitions %}
+            <span class="chip">→ {{ target }}</span>
+          {% endfor %}
+        {% else %}
+          <span>-</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    {% if not scenario_branches %}
+    <tr><td colspan="3">Шагов пока нет. Создайте первый шаг, обычно это триггер <code>/start</code>.</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Валидация сценариев</h2>
+  <p><strong>Битые переходы:</strong>
+    {% if broken_links %}
+      {% for link in broken_links %}
+        <span class="chip chip-danger">{{ link.source }} → {{ link.target }}</span>
+      {% endfor %}
+    {% else %}
+      нет
+    {% endif %}
+  </p>
+  <p><strong>Осиротевшие шаги:</strong>
+    {% if orphan_ids %}
+      {% for sid in orphan_ids %}
+        <span class="chip chip-warn">{{ sid }}</span>
+      {% endfor %}
+    {% else %}
+      нет
+    {% endif %}
+  </p>
+</div>
+
+<div class="card">
+  <h2>Тестовый прогон сценария</h2>
+  <label>Стартовый шаг:
+    <select id="sim-step-select">
+      {% for sc in scenarios %}
+        <option value="{{ sc.id }}">{{ sc.id }} — {{ sc.trigger_text }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="button" onclick="startSimulation()">Запустить тест</button>
+  <div id="simulator-output" class="sim-box"></div>
+</div>
+
+<table>
+  <tr><th>ID</th><th>Триггер</th><th>Ответ</th><th>Кнопки JSON</th><th>След. шаг</th><th>Изображение</th><th></th></tr>
+  {% for sc in scenarios %}
+  <tr>
+    <td>{{ sc.id }}</td>
+    <td>{{ sc.trigger_text }}</td>
+    <td>{{ sc.bot_reply_text[:80] }}{% if sc.bot_reply_text|length > 80 %}...{% endif %}</td>
+    <td><code>{{ sc.buttons_json or "-" }}</code></td>
+    <td>{{ sc.next_step or "-" }}</td>
+    <td>{{ "Да" if sc.scenario_image_path else "Нет" }}</td>
+    <td>
+      <button
+        type="button"
+        class="btn-edit"
+        data-id="{{ sc.id }}"
+        data-trigger="{{ sc.trigger_text }}"
+        data-reply="{{ sc.bot_reply_text }}"
+        data-next-step="{{ sc.next_step or '' }}"
+        data-buttons='{{ sc.buttons_json or "[]" }}'
+        data-image-path="{{ sc.scenario_image_path or '' }}"
+        onclick="editScenario(this)"
+      >Редактировать</button>
+      <form method="post" action="/scenarios/delete" onsubmit="return confirm('Удалить?')">
+        <input type="hidden" name="scenario_id" value="{{ sc.id }}" />
+        <button type="submit">Удалить</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<script>
+function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '') {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'button-row';
+  row.innerHTML = `
+    <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
+    <select class="btn-mode" onchange="toggleButtonFields(this)">
+      <option value="url" ${mode === 'url' ? 'selected' : ''}>URL</option>
+      <option value="step" ${mode === 'step' ? 'selected' : ''}>Шаг (ID)</option>
+    </select>
+    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" ${mode === 'step' ? 'style=\"display:none\"' : ''} />
+    <input type="number" class="btn-step-id" placeholder="ID шага" value="${stepId}" ${mode === 'url' ? 'style=\"display:none\"' : ''} />
+    <button type="button" onclick="this.parentElement.remove()">Удалить</button>
+  `;
+  container.appendChild(row);
+}
+
+function toggleButtonFields(select) {
+  const row = select.closest('.button-row');
+  const urlInput = row.querySelector('.btn-url');
+  const stepInput = row.querySelector('.btn-step-id');
+  if (select.value === 'step') {
+    urlInput.style.display = 'none';
+    stepInput.style.display = '';
+  } else {
+    urlInput.style.display = '';
+    stepInput.style.display = 'none';
+  }
+}
+
+function buildButtonsJson(prefix) {
+  const rows = Array.from(document.querySelectorAll(`#${prefix}-buttons .button-row`));
+  const buttons = rows
+    .map((row) => {
+      const text = row.querySelector('.btn-text').value.trim();
+      const mode = row.querySelector('.btn-mode').value;
+      if (!text) return null;
+
+      if (mode === 'step') {
+        const stepId = row.querySelector('.btn-step-id').value.trim();
+        if (!stepId) return null;
+        return { text, step_id: Number(stepId) };
+      }
+
+      const url = row.querySelector('.btn-url').value.trim();
+      if (!url) return null;
+      return { text, url };
+    })
+    .filter(Boolean);
+
+  const hidden = document.getElementById(`${prefix}-buttons-json`);
+  hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function editScenario(btn) {
+  const form = document.getElementById('scenario-form');
+  document.getElementById('scenario-id-input').value = btn.dataset.id || '';
+  form.querySelector('input[name=\"trigger_text\"]').value = btn.dataset.trigger || '';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = btn.dataset.reply || '';
+  form.querySelector('input[name=\"next_step\"]').value = btn.dataset.nextStep || '';
+  document.getElementById('existing-image-path').value = btn.dataset.imagePath || '';
+  document.getElementById('existing-image-label').textContent = btn.dataset.imagePath ? `Текущее изображение: ${btn.dataset.imagePath}` : '';
+
+  const container = document.getElementById('scenario-buttons');
+  container.innerHTML = '';
+  let parsed = [];
+  try {
+    parsed = JSON.parse(btn.dataset.buttons || '[]');
+  } catch (_) {
+    parsed = [];
+  }
+  parsed.flat().forEach((item) => {
+    if (item.url) {
+      addButtonRow('scenario-buttons', item.text || '', 'url', item.url || '', '');
+    } else if (item.step_id) {
+      addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
+    }
+  });
+}
+
+function createStartScenario() {
+  const form = document.getElementById('scenario-form');
+  document.getElementById('scenario-id-input').value = '';
+  form.querySelector('input[name=\"trigger_text\"]').value = '/start';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = 'Добро пожаловать! Выберите раздел ниже.';
+  form.querySelector('input[name=\"next_step\"]').value = '';
+  document.getElementById('existing-image-path').value = '';
+  document.getElementById('existing-image-label').textContent = '';
+  document.getElementById('scenario-buttons').innerHTML = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+const scenarioMap = {{ scenarios|tojson }};
+const scenarioById = Object.fromEntries(scenarioMap.map((s) => [String(s.id), s]));
+
+function renderGraph() {
+  const svg = document.getElementById('graph-view');
+  if (!svg) return;
+  svg.innerHTML = '';
+  const width = svg.clientWidth || 1000;
+  const nodes = {{ scenario_branches|tojson }};
+  if (!nodes.length) return;
+  const stepX = width / (nodes.length + 1);
+  const positions = {};
+
+  nodes.forEach((node, idx) => {
+    const x = stepX * (idx + 1);
+    const y = 70 + (idx % 2) * 90;
+    positions[node.id] = { x, y };
+  });
+
+  nodes.forEach((node) => {
+    (node.transitions || []).forEach((target) => {
+      const from = positions[node.id];
+      const to = positions[target];
+      if (!from || !to) return;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', from.x);
+      line.setAttribute('y1', from.y);
+      line.setAttribute('x2', to.x);
+      line.setAttribute('y2', to.y);
+      line.setAttribute('stroke', '#9aa6d1');
+      line.setAttribute('stroke-width', '2');
+      svg.appendChild(line);
+    });
+  });
+
+  nodes.forEach((node) => {
+    const pos = positions[node.id];
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', pos.x - 50);
+    rect.setAttribute('y', pos.y - 18);
+    rect.setAttribute('width', 100);
+    rect.setAttribute('height', 36);
+    rect.setAttribute('rx', 10);
+    rect.setAttribute('fill', '#eef2ff');
+    rect.setAttribute('stroke', '#7d8cc4');
+    svg.appendChild(rect);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', pos.x);
+    text.setAttribute('y', pos.y + 4);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-size', '13');
+    text.textContent = `#${node.id}`;
+    svg.appendChild(text);
+  });
+}
+
+function startSimulation() {
+  const selected = document.getElementById('sim-step-select').value;
+  renderSimulationStep(selected);
+}
+
+function renderSimulationStep(stepId) {
+  const output = document.getElementById('simulator-output');
+  const step = scenarioById[String(stepId)];
+  if (!step) {
+    output.innerHTML = '<p>Шаг не найден</p>';
+    return;
+  }
+  let html = `<p><strong>Шаг #${step.id}</strong>: ${step.bot_reply_text || ''}</p>`;
+  let buttons = [];
+  try { buttons = (JSON.parse(step.buttons_json || '[]') || []).flat(); } catch(e) {}
+  if (!buttons.length) {
+    html += '<p class=\"muted\">Кнопок перехода нет.</p>';
+  } else {
+    html += '<div>';
+    buttons.forEach((b) => {
+      if (b.step_id) {
+        html += `<button type=\"button\" onclick=\"renderSimulationStep('${b.step_id}')\">${b.text || ('Шаг ' + b.step_id)}</button> `;
+      }
+    });
+    html += '</div>';
+  }
+  output.innerHTML = html;
+}
+
+renderGraph();
+</script>
+{% endblock %}
