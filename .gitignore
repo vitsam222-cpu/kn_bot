@@ -1,58 +1,35 @@
 ```
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
-venv/
-ENV/
-env.bak/
-.venv/
-
-# Environment variables
-.env
-.env.local
-.env.*
-
 # Dependencies
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/modules/
+bot/.venv/
+bot/venv/
+bot/node_modules/
+bot/__pycache__/
+bot/*.pyc
+bot/*.pyo
+bot/*.pyd
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
+# Environment
+bot/.env
+bot/.env.local
+bot/.env.*
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs and temp files
+bot/*.log
+bot/*.tmp
+bot/*.swp
+
+# Editors
+bot/.vscode/
+bot/.idea/
+
+# Build artifacts
+bot/dist/
+bot/build/
+bot/target/
+bot/.gradle/
+bot/.mypy_cache/
+bot/.pytest_cache/
+bot/coverage/
+bot/htmlcov/
+bot/.coverage
 ```
