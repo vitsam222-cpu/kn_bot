@@ -4,6 +4,8 @@
 <div class="stats">
   <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
   <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
+  <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
+  <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
 </div>
 
 <div class="card">
@@ -18,9 +20,48 @@
       <button type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
     </div>
     <input id="broadcast-buttons-json" type="hidden" name="buttons_json" />
+    <label>Отложить до:
+      <input type="datetime-local" name="scheduled_at" />
+    </label>
+    <label>Таймзона:
+      <select name="timezone">
+        {% for tz in timezone_options %}
+          <option value="{{ tz }}">{{ tz }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="button" onclick="showPreview()">Превью</button>
 
     <button type="submit">Отправить</button>
   </form>
+</div>
+
+<div class="card">
+  <h2>История рассылок</h2>
+  <table>
+    <tr><th>ID</th><th>Время</th><th>Статус</th><th>План</th><th>Отправлено</th><th>Ошибки</th><th>Текст</th></tr>
+    {% for b in broadcast_history %}
+    <tr>
+      <td>{{ b.id }}</td>
+      <td>{{ b.created_at }}</td>
+      <td>{{ b.status }}</td>
+      <td>{{ b.scheduled_at or "-" }} {{ b.timezone or "" }}</td>
+      <td>{{ b.sent_count }}</td>
+      <td>{{ b.failed_count }}</td>
+      <td>{{ b.message_text[:80] }}{% if b.message_text|length > 80 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div id="preview-modal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Превью рассылки</h3>
+    <p id="preview-text"></p>
+    <div id="preview-buttons"></div>
+    <button type="button" onclick="hidePreview()">Закрыть</button>
+  </div>
 </div>
 
 <script>
@@ -49,6 +90,31 @@ function buildButtonsJson(prefix) {
 
   const hidden = document.getElementById(`${prefix}-buttons-json`);
   hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function showPreview() {
+  buildButtonsJson('broadcast');
+  const text = document.querySelector('textarea[name=\"text\"]').value;
+  const buttonsJson = document.getElementById('broadcast-buttons-json').value;
+  document.getElementById('preview-text').textContent = text || '(пусто)';
+  const wrap = document.getElementById('preview-buttons');
+  wrap.innerHTML = '';
+  if (buttonsJson) {
+    try {
+      const buttons = JSON.parse(buttonsJson).flat();
+      buttons.forEach((btn) => {
+        const el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = btn.text + ' → ' + (btn.url || '');
+        wrap.appendChild(el);
+      });
+    } catch (_) {}
+  }
+  document.getElementById('preview-modal').classList.remove('hidden');
+}
+
+function hidePreview() {
+  document.getElementById('preview-modal').classList.add('hidden');
 }
 </script>
 {% endblock %}

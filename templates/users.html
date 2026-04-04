@@ -1,14 +1,30 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Пользователи</h1>
+<div class="stats">
+  <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
+  <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
+</div>
 <a class="btn" href="/users/export">Скачать CSV</a>
+<div class="card">
+  <h3>Импорт whitelist/blacklist</h3>
+  <form method="post" action="/users/import-list" enctype="multipart/form-data">
+    <select name="mode">
+      <option value="blacklist">Импорт в blacklist</option>
+      <option value="whitelist">Импорт в whitelist (разбан)</option>
+    </select>
+    <input type="file" name="file" required />
+    <button type="submit">Импортировать</button>
+  </form>
+</div>
 <table>
-  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Статус</th><th>Действие</th></tr>
+  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Последний контакт</th><th>Статус</th><th>Действие</th></tr>
   {% for u in users %}
   <tr>
-    <td>{{ u.user_id }}</td>
+    <td><a href="/users/{{ u.user_id }}">{{ u.user_id }}</a></td>
     <td>@{{ u.username or "-" }}</td>
     <td>{{ u.created_at }}</td>
+    <td>{{ u.last_seen_at or "-" }}</td>
     <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
     <td>
       <form method="post" action="/users/toggle-ban">

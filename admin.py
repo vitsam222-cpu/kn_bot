@@ -1,9 +1,12 @@
 import csv
 import io
 import json
+import asyncio
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import uvicorn
@@ -23,6 +26,9 @@ templates = Jinja2Templates(directory="templates")
 db = Database()
 SCENARIO_UPLOAD_DIR = Path("uploads/scenarios")
 SCENARIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+BROADCAST_UPLOAD_DIR = Path("uploads/broadcasts")
+BROADCAST_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TIMEZONE_OPTIONS = ["UTC", "Europe/Moscow", "Asia/Almaty", "Asia/Tashkent"]
 
 
 def is_auth(request: Request) -> bool:
@@ -78,10 +84,17 @@ async def dashboard(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
-    return templates.TemplateResponse(request=request, name="dashboard.html", context=stats)
+    history = db.get_broadcast_history()
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={**stats, "broadcast_history": history, "timezone_options": TIMEZONE_OPTIONS},
+    )
 
 
-async def send_broadcast(text: str, user_ids: list[int], buttons_json: str | None, photo: bytes | None) -> dict[str, int]:
+async def send_broadcast(
+    text: str, user_ids: list[int], buttons_json: str | None, photo: bytes | None, photo_path: str | None = None
+) -> dict[str, int]:
     sent, failed = 0, 0
     markup: dict[str, Any] | None = None
     if buttons_json:
@@ -91,11 +104,14 @@ async def send_broadcast(text: str, user_ids: list[int], buttons_json: str | Non
     async with aiohttp.ClientSession() as session:
         for user_id in user_ids:
             try:
-                if photo:
+                image_payload = photo
+                if not image_payload and photo_path and Path(photo_path).exists():
+                    image_payload = Path(photo_path).read_bytes()
+                if image_payload:
                     data = aiohttp.FormData()
                     data.add_field("chat_id", str(user_id))
                     data.add_field("caption", text)
-                    data.add_field("photo", photo, filename="broadcast.jpg", content_type="image/jpeg")
+                    data.add_field("photo", image_payload, filename="broadcast.jpg", content_type="image/jpeg")
                     if markup:
                         data.add_field("reply_markup", json.dumps(markup, ensure_ascii=False))
                     async with session.post(f"{api_url}/sendPhoto", data=data) as resp:
@@ -122,14 +138,78 @@ async def broadcast(
     text: str = Form(...),
     buttons_json: str = Form(""),
     photo: UploadFile | None = None,
+    scheduled_at: str = Form(""),
+    timezone: str = Form("UTC"),
 ):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
 
     image_data = await photo.read() if photo and photo.filename else None
-    user_ids = db.get_active_user_ids()
-    await send_broadcast(text, user_ids, buttons_json or None, image_data)
+    photo_path = None
+    if image_data:
+        ext = Path(photo.filename or "").suffix or ".jpg"
+        filename = f"{uuid4().hex}{ext}"
+        saved = BROADCAST_UPLOAD_DIR / filename
+        saved.write_bytes(image_data)
+        photo_path = str(saved)
+
+    schedule_utc = None
+    if scheduled_at.strip():
+        tz = ZoneInfo(timezone if timezone in TIMEZONE_OPTIONS else "UTC")
+        dt_local = datetime.strptime(scheduled_at, "%Y-%m-%dT%H:%M")
+        schedule_utc = dt_local.replace(tzinfo=tz).astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S")
+
+    if schedule_utc:
+        db.log_broadcast(
+            message_text=text,
+            buttons_json=buttons_json or None,
+            photo_path=photo_path,
+            timezone=timezone,
+            scheduled_at=schedule_utc,
+            status="pending",
+        )
+    else:
+        user_ids = db.get_active_user_ids()
+        broadcast_id = db.log_broadcast(
+            message_text=text,
+            buttons_json=buttons_json or None,
+            photo_path=photo_path,
+            timezone=timezone,
+            scheduled_at=None,
+            status="running",
+        )
+        result = await send_broadcast(text, user_ids, buttons_json or None, image_data, photo_path=photo_path)
+        db.update_broadcast_status(
+            broadcast_id, status="done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
+        )
     return RedirectResponse("/dashboard", status_code=302)
+
+
+@app.on_event("startup")
+async def start_scheduler() -> None:
+    async def scheduler_loop():
+        while True:
+            try:
+                pending = db.get_pending_broadcasts()
+                for item in pending:
+                    db.update_broadcast_status(item["id"], status="running")
+                    user_ids = db.get_active_user_ids()
+                    result = await send_broadcast(
+                        item["message_text"],
+                        user_ids,
+                        item.get("buttons_json"),
+                        photo=None,
+                        photo_path=item.get("photo_path"),
+                    )
+                    db.update_broadcast_status(
+                        item["id"], "done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
+                    )
+            except Exception as exc:
+                # keep background loop alive
+                print(f"Broadcast scheduler error: {exc}")
+            await asyncio.sleep(20)
+
+    asyncio.create_task(scheduler_loop())
 
 
 @app.get("/scenarios", response_class=HTMLResponse)
@@ -138,10 +218,27 @@ async def scenarios_page(request: Request):
         return RedirectResponse("/", status_code=302)
     scenarios = db.get_all_scenarios()
     start_scenario = db.get_scenario_by_trigger("/start")
+    metrics = db.get_scenario_metrics()
+    scenario_ids = {s["id"] for s in scenarios}
     scenario_branches = [
-        {"id": scenario["id"], "trigger_text": scenario["trigger_text"], "transitions": extract_transitions(scenario)}
+        {
+            "id": scenario["id"],
+            "trigger_text": scenario["trigger_text"],
+            "transitions": extract_transitions(scenario),
+            "visits_count": metrics.get(scenario["id"], 0),
+        }
         for scenario in scenarios
     ]
+    incoming_refs: dict[int, int] = {sid: 0 for sid in scenario_ids}
+    broken_links: list[dict[str, int]] = []
+    for branch in scenario_branches:
+        for target in branch["transitions"]:
+            if target in incoming_refs:
+                incoming_refs[target] += 1
+            else:
+                broken_links.append({"source": branch["id"], "target": target})
+    orphan_ids = sorted([sid for sid, refs in incoming_refs.items() if refs == 0 and sid != (start_scenario or {}).get("id")])
+
     return templates.TemplateResponse(
         request=request,
         name="scenarios.html",
@@ -149,6 +246,8 @@ async def scenarios_page(request: Request):
             "scenarios": scenarios,
             "scenario_branches": scenario_branches,
             "start_scenario": start_scenario,
+            "broken_links": broken_links,
+            "orphan_ids": orphan_ids,
         },
     )
 
@@ -199,7 +298,8 @@ async def users_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     users = db.get_users_with_status()
-    return templates.TemplateResponse(request=request, name="users.html", context={"users": users})
+    stats = db.get_stats()
+    return templates.TemplateResponse(request=request, name="users.html", context={"users": users, **stats})
 
 
 @app.post("/users/toggle-ban")
@@ -207,6 +307,41 @@ async def toggle_ban(request: Request, user_id: int = Form(...), banned: int = F
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     db.set_blacklist(user_id=user_id, banned=bool(banned))
+    db.add_user_event(user_id, "ban_toggle", "banned" if banned else "unbanned")
+    return RedirectResponse("/users", status_code=302)
+
+
+@app.get("/users/{user_id}", response_class=HTMLResponse)
+async def user_profile(request: Request, user_id: int):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    users = [u for u in db.get_users_with_status() if u["user_id"] == user_id]
+    if not users:
+        return RedirectResponse("/users", status_code=302)
+    events = db.get_user_events(user_id)
+    return templates.TemplateResponse(
+        request=request,
+        name="user_profile.html",
+        context={"user": users[0], "events": events},
+    )
+
+
+@app.post("/users/import-list")
+async def import_list(request: Request, mode: str = Form(...), file: UploadFile | None = None):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    if not file or not file.filename:
+        return RedirectResponse("/users", status_code=302)
+    raw = (await file.read()).decode("utf-8", errors="ignore")
+    user_ids = []
+    for token in raw.replace(",", "\n").splitlines():
+        token = token.strip()
+        if token.isdigit():
+            user_ids.append(int(token))
+    if mode == "blacklist":
+        db.import_blacklist(user_ids)
+    else:
+        db.import_whitelist(user_ids)
     return RedirectResponse("/users", status_code=302)
 
 

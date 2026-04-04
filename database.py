@@ -33,7 +33,8 @@ class Database:
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_seen_at TIMESTAMP
                 );
 
                 CREATE TABLE IF NOT EXISTS blacklist (
@@ -55,6 +56,33 @@ class Database:
                     remind_at TEXT,
                     message TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS broadcast_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_text TEXT NOT NULL,
+                    buttons_json TEXT,
+                    photo_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    timezone TEXT,
+                    scheduled_at TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    sent_count INTEGER DEFAULT 0,
+                    failed_count INTEGER DEFAULT 0,
+                    error_text TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS scenario_metrics (
+                    scenario_id INTEGER PRIMARY KEY,
+                    visits_count INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS user_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             scenario_columns = {
@@ -62,14 +90,21 @@ class Database:
             }
             if "scenario_image_path" not in scenario_columns:
                 conn.execute("ALTER TABLE scenarios ADD COLUMN scenario_image_path TEXT")
+            user_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+            }
+            if "last_seen_at" not in user_columns:
+                conn.execute("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP")
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO users(user_id, username)
-                VALUES(?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET username=excluded.username
+                INSERT INTO users(user_id, username, last_seen_at)
+                VALUES(?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    username=excluded.username,
+                    last_seen_at=CURRENT_TIMESTAMP
                 """,
                 (user_id, username),
             )
@@ -142,7 +177,7 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT u.user_id, u.username, u.created_at,
+                SELECT u.user_id, u.username, u.created_at, u.last_seen_at,
                        CASE WHEN b.user_id IS NULL THEN 0 ELSE 1 END AS is_banned
                 FROM users u
                 LEFT JOIN blacklist b ON u.user_id = b.user_id
@@ -155,7 +190,13 @@ class Database:
         with self.connect() as conn:
             users_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             blocked_count = conn.execute("SELECT COUNT(*) FROM blacklist").fetchone()[0]
-        return {"users_count": users_count, "blocked_count": blocked_count}
+            dau = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE datetime(last_seen_at) >= datetime('now', '-1 day')"
+            ).fetchone()[0]
+            wau = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE datetime(last_seen_at) >= datetime('now', '-7 day')"
+            ).fetchone()[0]
+        return {"users_count": users_count, "blocked_count": blocked_count, "dau": dau, "wau": wau}
 
     def get_active_user_ids(self) -> list[int]:
         with self.connect() as conn:
@@ -166,3 +207,94 @@ class Database:
                 """
             ).fetchall()
         return [int(r[0]) for r in rows]
+
+    def log_broadcast(
+        self,
+        message_text: str,
+        buttons_json: str | None,
+        photo_path: str | None,
+        timezone: str | None,
+        scheduled_at: str | None,
+        status: str = "pending",
+    ) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO broadcast_history(message_text, buttons_json, photo_path, timezone, scheduled_at, status)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (message_text, buttons_json, photo_path, timezone, scheduled_at, status),
+            )
+            return int(cur.lastrowid)
+
+    def update_broadcast_status(
+        self, broadcast_id: int, status: str, sent_count: int = 0, failed_count: int = 0, error_text: str | None = None
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE broadcast_history
+                SET status=?, sent_count=?, failed_count=?, error_text=?
+                WHERE id=?
+                """,
+                (status, sent_count, failed_count, error_text, broadcast_id),
+            )
+
+    def get_broadcast_history(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM broadcast_history ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_pending_broadcasts(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM broadcast_history
+                WHERE status='pending' AND scheduled_at IS NOT NULL
+                  AND datetime(scheduled_at) <= datetime('now')
+                ORDER BY scheduled_at
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def increment_scenario_visit(self, scenario_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO scenario_metrics(scenario_id, visits_count)
+                VALUES(?, 1)
+                ON CONFLICT(scenario_id) DO UPDATE SET visits_count = visits_count + 1
+                """,
+                (scenario_id,),
+            )
+
+    def get_scenario_metrics(self) -> dict[int, int]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT scenario_id, visits_count FROM scenario_metrics").fetchall()
+        return {int(r["scenario_id"]): int(r["visits_count"]) for r in rows}
+
+    def add_user_event(self, user_id: int, event_type: str, payload: str | None = None) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO user_events(user_id, event_type, payload) VALUES(?, ?, ?)",
+                (user_id, event_type, payload),
+            )
+
+    def get_user_events(self, user_id: int, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM user_events WHERE user_id=? ORDER BY id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def import_blacklist(self, user_ids: list[int]) -> None:
+        with self.connect() as conn:
+            conn.executemany("INSERT OR IGNORE INTO blacklist(user_id) VALUES(?)", [(uid,) for uid in user_ids])
+
+    def import_whitelist(self, user_ids: list[int]) -> None:
+        with self.connect() as conn:
+            conn.executemany("DELETE FROM blacklist WHERE user_id = ?", [(uid,) for uid in user_ids])

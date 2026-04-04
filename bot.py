@@ -49,6 +49,7 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
 
 
 async def send_scenario_message(message: Message, scenario: dict) -> None:
+    db.increment_scenario_visit(int(scenario["id"]))
     markup = build_keyboard(scenario.get("buttons_json"))
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():
@@ -62,6 +63,7 @@ async def start_command(message: Message) -> None:
     if db.is_blacklisted(message.from_user.id):
         return
     db.add_user(message.from_user.id, message.from_user.username)
+    db.add_user_event(message.from_user.id, "command_start", "/start")
     start_scenario = db.get_scenario_by_trigger("/start")
     if start_scenario:
         await send_scenario_message(message, start_scenario)
@@ -76,6 +78,7 @@ async def process_text_message(message: Message) -> None:
         return
 
     db.add_user(user_id, message.from_user.username)
+    db.add_user_event(user_id, "incoming_text", message.text)
     scenario = db.get_scenario_by_trigger(message.text)
     if scenario:
         await send_scenario_message(message, scenario)
@@ -105,6 +108,7 @@ async def process_step_callback(callback: CallbackQuery) -> None:
         await callback.answer("Шаг не найден", show_alert=True)
         return
 
+    db.add_user_event(callback.from_user.id, "callback_step", callback.data)
     await send_scenario_message(callback.message, scenario)
     await callback.answer()
 
