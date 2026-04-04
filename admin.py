@@ -291,22 +291,31 @@ async def save_scenario(
     if safe_buttons_json:
         try:
             payload = json.loads(safe_buttons_json)
+            canonical_rows: list[list[dict[str, Any]]] = []
             if isinstance(payload, dict):
                 payload = [[payload]]
-            if not isinstance(payload, list):
-                payload = []
-            for row in payload:
-                if not isinstance(row, list):
-                    continue
-                for button in row:
-                    if not isinstance(button, dict):
+            if isinstance(payload, list):
+                for row in payload:
+                    if isinstance(row, dict):
+                        row = [row]
+                    if not isinstance(row, list):
                         continue
+                    canonical_row: list[dict[str, Any]] = []
+                    for button in row:
+                        if not isinstance(button, dict):
+                            continue
+                        canonical_row.append(button)
+                    if canonical_row:
+                        canonical_rows.append(canonical_row)
+
+            for row in canonical_rows:
+                for button in row:
                     step_trigger = button.get("step_trigger")
                     if step_trigger and not button.get("step_id"):
                         resolved_id = db.resolve_scenario_ref(str(step_trigger))
                         if resolved_id:
                             button["step_id"] = resolved_id
-            safe_buttons_json = json.dumps(payload, ensure_ascii=False)
+            safe_buttons_json = json.dumps(canonical_rows, ensure_ascii=False) if canonical_rows else None
         except json.JSONDecodeError:
             safe_buttons_json = None
 
