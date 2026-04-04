@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 import uvicorn
-from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -137,7 +137,7 @@ async def broadcast(
     request: Request,
     text: str = Form(...),
     buttons_json: str = Form(""),
-    photo: UploadFile | None = None,
+    photo: UploadFile | None = File(None),
     scheduled_at: str = Form(""),
     timezone: str = Form("UTC"),
 ):
@@ -260,7 +260,7 @@ async def save_scenario(
     bot_reply_text: str = Form(...),
     buttons_json: str = Form(""),
     next_step: int | None = Form(None),
-    scenario_image: UploadFile | None = None,
+    scenario_image: UploadFile | None = File(None),
     existing_image_path: str = Form(""),
 ):
     if not is_auth(request):
@@ -274,10 +274,17 @@ async def save_scenario(
         image_path.write_bytes(await scenario_image.read())
         scenario_image_path = str(image_path)
 
+    safe_buttons_json = buttons_json.strip() or None
+    if safe_buttons_json:
+        try:
+            json.loads(safe_buttons_json)
+        except json.JSONDecodeError:
+            safe_buttons_json = None
+
     db.upsert_scenario(
         trigger_text=trigger_text.strip(),
         bot_reply_text=bot_reply_text.strip(),
-        buttons_json=buttons_json.strip() or None,
+        buttons_json=safe_buttons_json,
         next_step=next_step,
         scenario_image_path=scenario_image_path,
         scenario_id=scenario_id,

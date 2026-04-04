@@ -53,8 +53,12 @@ async def send_scenario_message(message: Message, scenario: dict) -> None:
     markup = build_keyboard(scenario.get("buttons_json"))
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():
-        await message.answer_photo(photo=image_path, caption=scenario["bot_reply_text"], reply_markup=markup)
-        return
+        try:
+            await message.answer_photo(photo=image_path, caption=scenario["bot_reply_text"], reply_markup=markup)
+            return
+        except Exception:
+            # fallback to text if image sending fails
+            pass
     await message.answer(scenario["bot_reply_text"], reply_markup=markup)
 
 
