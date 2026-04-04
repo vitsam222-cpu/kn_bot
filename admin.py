@@ -29,7 +29,7 @@ def is_auth(request: Request) -> bool:
 async def login_page(request: Request):
     if is_auth(request):
         return RedirectResponse("/dashboard", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
 
 
 @app.post("/", response_class=HTMLResponse)
@@ -37,7 +37,7 @@ async def login(request: Request, password: str = Form(...)):
     if password == settings.admin_password:
         request.session["auth"] = True
         return RedirectResponse("/dashboard", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверный пароль"})
+    return templates.TemplateResponse(request=request, name="login.html", context={"error": "Неверный пароль"})
 
 
 @app.get("/logout")
@@ -51,7 +51,7 @@ async def dashboard(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
-    return templates.TemplateResponse("dashboard.html", {"request": request, **stats})
+    return templates.TemplateResponse(request=request, name="dashboard.html", context=stats)
 
 
 async def send_broadcast(text: str, user_ids: list[int], buttons_json: str | None, photo: bytes | None) -> dict[str, int]:
@@ -110,7 +110,7 @@ async def scenarios_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     scenarios = db.get_all_scenarios()
-    return templates.TemplateResponse("scenarios.html", {"request": request, "scenarios": scenarios})
+    return templates.TemplateResponse(request=request, name="scenarios.html", context={"scenarios": scenarios})
 
 
 @app.post("/scenarios/save")
@@ -147,7 +147,7 @@ async def users_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     users = db.get_users_with_status()
-    return templates.TemplateResponse("users.html", {"request": request, "users": users})
+    return templates.TemplateResponse(request=request, name="users.html", context={"users": users})
 
 
 @app.post("/users/toggle-ban")
