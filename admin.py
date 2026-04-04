@@ -1,6 +1,8 @@
 import csv
 import io
 import json
+from pathlib import Path
+from uuid import uuid4
 from typing import Any
 
 import aiohttp
@@ -19,6 +21,8 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 db = Database()
+SCENARIO_UPLOAD_DIR = Path("uploads/scenarios")
+SCENARIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def is_auth(request: Request) -> bool:
@@ -152,14 +156,26 @@ async def save_scenario(
     bot_reply_text: str = Form(...),
     buttons_json: str = Form(""),
     next_step: int | None = Form(None),
+    scenario_image: UploadFile | None = None,
+    existing_image_path: str = Form(""),
 ):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
+
+    scenario_image_path = existing_image_path.strip() or None
+    if scenario_image and scenario_image.filename:
+        ext = Path(scenario_image.filename).suffix or ".jpg"
+        filename = f"{uuid4().hex}{ext}"
+        image_path = SCENARIO_UPLOAD_DIR / filename
+        image_path.write_bytes(await scenario_image.read())
+        scenario_image_path = str(image_path)
+
     db.upsert_scenario(
         trigger_text=trigger_text.strip(),
         bot_reply_text=bot_reply_text.strip(),
         buttons_json=buttons_json.strip() or None,
         next_step=next_step,
+        scenario_image_path=scenario_image_path,
         scenario_id=scenario_id,
     )
     return RedirectResponse("/scenarios", status_code=302)

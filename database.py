@@ -45,7 +45,8 @@ class Database:
                     trigger_text TEXT UNIQUE NOT NULL,
                     bot_reply_text TEXT NOT NULL,
                     buttons_json TEXT,
-                    next_step INTEGER
+                    next_step INTEGER,
+                    scenario_image_path TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS reminders (
@@ -56,6 +57,11 @@ class Database:
                 );
                 """
             )
+            scenario_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(scenarios)").fetchall()
+            }
+            if "scenario_image_path" not in scenario_columns:
+                conn.execute("ALTER TABLE scenarios ADD COLUMN scenario_image_path TEXT")
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -103,6 +109,7 @@ class Database:
         bot_reply_text: str,
         buttons_json: str | None,
         next_step: int | None,
+        scenario_image_path: str | None = None,
         scenario_id: int | None = None,
     ) -> None:
         if buttons_json:
@@ -113,18 +120,18 @@ class Database:
                 conn.execute(
                     """
                     UPDATE scenarios
-                    SET trigger_text=?, bot_reply_text=?, buttons_json=?, next_step=?
+                    SET trigger_text=?, bot_reply_text=?, buttons_json=?, next_step=?, scenario_image_path=?
                     WHERE id=?
                     """,
-                    (trigger_text, bot_reply_text, buttons_json, next_step, scenario_id),
+                    (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path, scenario_id),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step)
-                    VALUES(?, ?, ?, ?)
+                    INSERT INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
+                    VALUES(?, ?, ?, ?, ?)
                     """,
-                    (trigger_text, bot_reply_text, buttons_json, next_step),
+                    (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
                 )
 
     def delete_scenario(self, scenario_id: int) -> None:

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
@@ -47,11 +48,24 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
 
 
+async def send_scenario_message(message: Message, scenario: dict) -> None:
+    markup = build_keyboard(scenario.get("buttons_json"))
+    image_path = scenario.get("scenario_image_path")
+    if image_path and Path(image_path).exists():
+        await message.answer_photo(photo=image_path, caption=scenario["bot_reply_text"], reply_markup=markup)
+        return
+    await message.answer(scenario["bot_reply_text"], reply_markup=markup)
+
+
 @dp.message(CommandStart())
 async def start_command(message: Message) -> None:
     if db.is_blacklisted(message.from_user.id):
         return
     db.add_user(message.from_user.id, message.from_user.username)
+    start_scenario = db.get_scenario_by_trigger("/start")
+    if start_scenario:
+        await send_scenario_message(message, start_scenario)
+        return
     await message.answer("Добро пожаловать в Кадровый Навигатор! Напишите команду или триггер.")
 
 
@@ -64,8 +78,7 @@ async def process_text_message(message: Message) -> None:
     db.add_user(user_id, message.from_user.username)
     scenario = db.get_scenario_by_trigger(message.text)
     if scenario:
-        markup = build_keyboard(scenario.get("buttons_json"))
-        await message.answer(scenario["bot_reply_text"], reply_markup=markup)
+        await send_scenario_message(message, scenario)
         return
 
     if message.text.strip() == "/start":
@@ -92,8 +105,7 @@ async def process_step_callback(callback: CallbackQuery) -> None:
         await callback.answer("Шаг не найден", show_alert=True)
         return
 
-    markup = build_keyboard(scenario.get("buttons_json"))
-    await callback.message.answer(scenario["bot_reply_text"], reply_markup=markup)
+    await send_scenario_message(callback.message, scenario)
     await callback.answer()
 
 

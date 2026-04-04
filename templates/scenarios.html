@@ -2,10 +2,13 @@
 {% block content %}
 <h1>Сценарии</h1>
 <div class="card">
-  <form method="post" action="/scenarios/save" onsubmit="buildButtonsJson('scenario')">
-    <input type="number" name="scenario_id" placeholder="ID (для редактирования)" />
+  <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="buildButtonsJson('scenario')">
+    <input id="scenario-id-input" type="number" name="scenario_id" placeholder="ID (для редактирования)" />
     <input type="text" name="trigger_text" placeholder="Триггер" required />
     <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
+    <label>Изображение шага: <input type="file" name="scenario_image" accept="image/*" /></label>
+    <input type="hidden" name="existing_image_path" id="existing-image-path" />
+    <small id="existing-image-label"></small>
 
     <h3>Кнопки сценария</h3>
     <div id="scenario-buttons"></div>
@@ -42,7 +45,7 @@
 </div>
 
 <table>
-  <tr><th>ID</th><th>Триггер</th><th>Ответ</th><th>Кнопки JSON</th><th>След. шаг</th><th></th></tr>
+  <tr><th>ID</th><th>Триггер</th><th>Ответ</th><th>Кнопки JSON</th><th>След. шаг</th><th>Изображение</th><th></th></tr>
   {% for sc in scenarios %}
   <tr>
     <td>{{ sc.id }}</td>
@@ -50,7 +53,19 @@
     <td>{{ sc.bot_reply_text[:80] }}{% if sc.bot_reply_text|length > 80 %}...{% endif %}</td>
     <td><code>{{ sc.buttons_json or "-" }}</code></td>
     <td>{{ sc.next_step or "-" }}</td>
+    <td>{{ "Да" if sc.scenario_image_path else "Нет" }}</td>
     <td>
+      <button
+        type="button"
+        class="btn-edit"
+        data-id="{{ sc.id }}"
+        data-trigger="{{ sc.trigger_text }}"
+        data-reply="{{ sc.bot_reply_text }}"
+        data-next-step="{{ sc.next_step or '' }}"
+        data-buttons='{{ sc.buttons_json or "[]" }}'
+        data-image-path="{{ sc.scenario_image_path or '' }}"
+        onclick="editScenario(this)"
+      >Редактировать</button>
       <form method="post" action="/scenarios/delete" onsubmit="return confirm('Удалить?')">
         <input type="hidden" name="scenario_id" value="{{ sc.id }}" />
         <button type="submit">Удалить</button>
@@ -113,6 +128,32 @@ function buildButtonsJson(prefix) {
 
   const hidden = document.getElementById(`${prefix}-buttons-json`);
   hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function editScenario(btn) {
+  const form = document.getElementById('scenario-form');
+  document.getElementById('scenario-id-input').value = btn.dataset.id || '';
+  form.querySelector('input[name=\"trigger_text\"]').value = btn.dataset.trigger || '';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = btn.dataset.reply || '';
+  form.querySelector('input[name=\"next_step\"]').value = btn.dataset.nextStep || '';
+  document.getElementById('existing-image-path').value = btn.dataset.imagePath || '';
+  document.getElementById('existing-image-label').textContent = btn.dataset.imagePath ? `Текущее изображение: ${btn.dataset.imagePath}` : '';
+
+  const container = document.getElementById('scenario-buttons');
+  container.innerHTML = '';
+  let parsed = [];
+  try {
+    parsed = JSON.parse(btn.dataset.buttons || '[]');
+  } catch (_) {
+    parsed = [];
+  }
+  parsed.flat().forEach((item) => {
+    if (item.url) {
+      addButtonRow('scenario-buttons', item.text || '', 'url', item.url || '', '');
+    } else if (item.step_id) {
+      addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
+    }
+  });
 }
 </script>
 {% endblock %}
