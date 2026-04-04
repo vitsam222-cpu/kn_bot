@@ -15,6 +15,7 @@ button, .btn { background: #3b6cff; color: #fff; border: 0; padding: 8px 12px; b
 table { width: 100%; border-collapse: collapse; background: white; }
 th, td { border: 1px solid #e6e6f0; padding: 8px; vertical-align: top; text-align: left; }
 .error { color: #d10000; }
+.muted { color: #5f6880; margin-top: 0; }
 code { white-space: pre-wrap; }
 
 .button-row { display: grid; grid-template-columns: 1fr 140px 1fr 140px auto; gap: 8px; margin-bottom: 8px; align-items: center; }

@@ -137,6 +137,7 @@ async def scenarios_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     scenarios = db.get_all_scenarios()
+    start_scenario = db.get_scenario_by_trigger("/start")
     scenario_branches = [
         {"id": scenario["id"], "trigger_text": scenario["trigger_text"], "transitions": extract_transitions(scenario)}
         for scenario in scenarios
@@ -144,7 +145,11 @@ async def scenarios_page(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="scenarios.html",
-        context={"scenarios": scenarios, "scenario_branches": scenario_branches},
+        context={
+            "scenarios": scenarios,
+            "scenario_branches": scenario_branches,
+            "start_scenario": start_scenario,
+        },
     )
 
 

@@ -2,6 +2,15 @@
 {% block content %}
 <h1>Сценарии</h1>
 <div class="card">
+  <h2>Первый шаг бота (/start)</h2>
+  {% if start_scenario %}
+    <p>Найден стартовый шаг: <strong>ID {{ start_scenario.id }}</strong>. Нажмите «Редактировать» у этого шага в таблице ниже.</p>
+  {% else %}
+    <p class="error">Стартовый шаг не создан. Создайте его, чтобы бот отправлял первое сообщение по команде <code>/start</code>.</p>
+    <button type="button" onclick="createStartScenario()">Создать /start шаг</button>
+  {% endif %}
+</div>
+<div class="card">
   <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="buildButtonsJson('scenario')">
     <input id="scenario-id-input" type="number" name="scenario_id" placeholder="ID (для редактирования)" />
     <input type="text" name="trigger_text" placeholder="Триггер" required />
@@ -23,7 +32,8 @@
 </div>
 
 <div class="card">
-  <h2>Иерархия/ветки шагов</h2>
+  <h2>Карта переходов (иерархия шагов)</h2>
+  <p class="muted">Здесь отображаются связи между шагами: из поля «След. шаг» и из кнопок типа «Шаг (ID)».</p>
   <table>
     <tr><th>Шаг</th><th>Триггер</th><th>Переходы</th></tr>
     {% for branch in scenario_branches %}
@@ -41,6 +51,9 @@
       </td>
     </tr>
     {% endfor %}
+    {% if not scenario_branches %}
+    <tr><td colspan="3">Шагов пока нет. Создайте первый шаг, обычно это триггер <code>/start</code>.</td></tr>
+    {% endif %}
   </table>
 </div>
 
@@ -154,6 +167,18 @@ function editScenario(btn) {
       addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
     }
   });
+}
+
+function createStartScenario() {
+  const form = document.getElementById('scenario-form');
+  document.getElementById('scenario-id-input').value = '';
+  form.querySelector('input[name=\"trigger_text\"]').value = '/start';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = 'Добро пожаловать! Выберите раздел ниже.';
+  form.querySelector('input[name=\"next_step\"]').value = '';
+  document.getElementById('existing-image-path').value = '';
+  document.getElementById('existing-image-label').textContent = '';
+  document.getElementById('scenario-buttons').innerHTML = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 </script>
 {% endblock %}
