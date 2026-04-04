@@ -311,7 +311,7 @@ async def save_scenario(
             scenario_image_path=scenario_image_path,
             scenario_id=parsed_scenario_id,
         )
-    except (sqlite3.IntegrityError, ValueError):
+    except (sqlite3.Error, ValueError):
         return RedirectResponse(f"/scenarios?msg={quote_plus('Ошибка сохранения шага')}", status_code=302)
     return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг сохранен')}", status_code=302)
 

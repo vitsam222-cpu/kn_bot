@@ -199,13 +199,6 @@ class Database:
                         """,
                         (normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path),
                     )
-                    conn.execute(
-                        """
-                        INSERT INTO sqlite_sequence(name, seq)
-                        VALUES('scenarios', 1)
-                        ON CONFLICT(name) DO UPDATE SET seq=MAX(seq, 1)
-                        """
-                    )
                 else:
                     conn.execute(
                         """
