@@ -129,7 +129,7 @@
 </table>
 
 <script>
-function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '') {
+function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '', stepTag = '') {
   const container = document.getElementById(containerId);
   const row = document.createElement('div');
   row.className = 'button-row';
@@ -137,10 +137,12 @@ function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '
     <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
     <select class="btn-mode" onchange="toggleButtonFields(this)">
       <option value="url" ${mode === 'url' ? 'selected' : ''}>URL</option>
-      <option value="step" ${mode === 'step' ? 'selected' : ''}>Шаг (ID)</option>
+      <option value="id" ${mode === 'id' ? 'selected' : ''}>ID шага</option>
+      <option value="tag" ${mode === 'tag' ? 'selected' : ''}>Тег шага</option>
     </select>
-    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" ${mode === 'step' ? 'style=\"display:none\"' : ''} />
-    <input type="text" class="btn-step-id" placeholder="ID или триггер шага" value="${stepId}" ${mode === 'url' ? 'style=\"display:none\"' : ''} />
+    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" ${mode !== 'url' ? 'style=\"display:none\"' : ''} />
+    <input type="number" class="btn-step-id" placeholder="ID шага" value="${stepId}" ${mode !== 'id' ? 'style=\"display:none\"' : ''} />
+    <input type="text" class="btn-step-tag" placeholder="Тег (например docs)" value="${stepTag}" ${mode !== 'tag' ? 'style=\"display:none\"' : ''} />
     <button type="button" onclick="this.parentElement.remove()">Удалить</button>
   `;
   container.appendChild(row);
@@ -149,14 +151,11 @@ function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '
 function toggleButtonFields(select) {
   const row = select.closest('.button-row');
   const urlInput = row.querySelector('.btn-url');
-  const stepInput = row.querySelector('.btn-step-id');
-  if (select.value === 'step') {
-    urlInput.style.display = 'none';
-    stepInput.style.display = '';
-  } else {
-    urlInput.style.display = '';
-    stepInput.style.display = 'none';
-  }
+  const stepIdInput = row.querySelector('.btn-step-id');
+  const stepTagInput = row.querySelector('.btn-step-tag');
+  urlInput.style.display = select.value === 'url' ? '' : 'none';
+  stepIdInput.style.display = select.value === 'id' ? '' : 'none';
+  stepTagInput.style.display = select.value === 'tag' ? '' : 'none';
 }
 
 function buildButtonsJson(prefix) {
@@ -167,13 +166,16 @@ function buildButtonsJson(prefix) {
       const mode = row.querySelector('.btn-mode').value;
       if (!text) return null;
 
-      if (mode === 'step') {
-        const stepRef = row.querySelector('.btn-step-id').value.trim();
-        if (!stepRef) return null;
-        if (/^\d+$/.test(stepRef)) {
-          return { text, step_id: Number(stepRef) };
-        }
-        return { text, step_trigger: stepRef };
+      if (mode === 'id') {
+        const stepId = row.querySelector('.btn-step-id').value.trim();
+        if (!stepId) return null;
+        return { text, step_id: Number(stepId) };
+      }
+
+      if (mode === 'tag') {
+        const stepTag = row.querySelector('.btn-step-tag').value.trim();
+        if (!stepTag) return null;
+        return { text, step_trigger: stepTag };
       }
 
       const url = row.querySelector('.btn-url').value.trim();
@@ -220,11 +222,11 @@ function editScenario(btn) {
   }
   parsed.flat().forEach((item) => {
     if (item.url) {
-      addButtonRow('scenario-buttons', item.text || '', 'url', item.url || '', '');
+      addButtonRow('scenario-buttons', item.text || '', 'url', item.url || '', '', '');
     } else if (item.step_id) {
-      addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
+      addButtonRow('scenario-buttons', item.text || '', 'id', '', item.step_id, '');
     } else if (item.step_trigger) {
-      addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_trigger);
+      addButtonRow('scenario-buttons', item.text || '', 'tag', '', '', item.step_trigger);
     }
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
