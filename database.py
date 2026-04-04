@@ -105,6 +105,13 @@ class Database:
                     VALUES('/start', 'Добро пожаловать! Выберите раздел ниже.', NULL, NULL, NULL)
                     """
                 )
+            else:
+                start_row = conn.execute(
+                    "SELECT id FROM scenarios WHERE lower(trigger_text)=lower('/start') LIMIT 1"
+                ).fetchone()
+                id_1_row = conn.execute("SELECT id FROM scenarios WHERE id=1").fetchone()
+                if start_row and int(start_row["id"]) != 1 and not id_1_row:
+                    conn.execute("UPDATE scenarios SET id=1 WHERE id=?", (int(start_row["id"]),))
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -194,6 +201,21 @@ class Database:
                     )
                 return
             else:
+                existing_trigger = conn.execute(
+                    "SELECT id FROM scenarios WHERE lower(trigger_text)=lower(?)",
+                    (normalized_trigger,),
+                ).fetchone()
+                if existing_trigger:
+                    conn.execute(
+                        """
+                        UPDATE scenarios
+                        SET bot_reply_text=?, buttons_json=?, next_step=?, scenario_image_path=?
+                        WHERE id=?
+                        """,
+                        (bot_reply_text, buttons_json, next_step, scenario_image_path, int(existing_trigger["id"])),
+                    )
+                    return
+
                 existing_start = conn.execute(
                     "SELECT id FROM scenarios WHERE lower(trigger_text)=lower('/start')"
                 ).fetchone()
