@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Дашборд</h1>
+<div class="stats">
+  <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
+  <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
+</div>
+
+<div class="card">
+  <h2>Рассылка</h2>
+  <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="buildButtonsJson('broadcast')">
+    <textarea name="text" placeholder="Текст сообщения" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+
+    <h3>Кнопки</h3>
+    <div id="broadcast-buttons"></div>
+    <div class="button-row-actions">
+      <button type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="broadcast-buttons-json" type="hidden" name="buttons_json" />
+
+    <button type="submit">Отправить</button>
+  </form>
+</div>
+
+<script>
+function addButtonRow(containerId, text = '', url = '') {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'button-row button-row-simple';
+  row.innerHTML = `
+    <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
+    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" />
+    <button type="button" onclick="this.parentElement.remove()">Удалить</button>
+  `;
+  container.appendChild(row);
+}
+
+function buildButtonsJson(prefix) {
+  const rows = Array.from(document.querySelectorAll(`#${prefix}-buttons .button-row`));
+  const buttons = rows
+    .map((row) => {
+      const text = row.querySelector('.btn-text').value.trim();
+      const url = row.querySelector('.btn-url').value.trim();
+      if (!text || !url) return null;
+      return { text, url };
+    })
+    .filter(Boolean);
+
+  const hidden = document.getElementById(`${prefix}-buttons-json`);
+  hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+</script>
+{% endblock %}

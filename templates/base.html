@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "KN Admin" }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="page-loader" class="page-loader hidden">Загрузка…</div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">Кадровый Навигатор</div>
+      <nav class="nav-links">
+        <a data-nav href="/dashboard">Дашборд</a>
+        <a data-nav href="/scenarios">Сценарии</a>
+        <a data-nav href="/users">Пользователи</a>
+        <a href="/logout">Выход</a>
+      </nav>
+    </aside>
+    <section class="content-wrap">
+      <main id="main-content">{% block content %}{% endblock %}</main>
+    </section>
+  </div>
+  <script>
+    const loader = document.getElementById('page-loader');
+    const mainContent = document.getElementById('main-content');
+    const prefetched = new Set();
+
+    function setActiveNav(pathname) {
+      document.querySelectorAll('[data-nav]').forEach((link) => {
+        link.classList.toggle('active', link.getAttribute('href') === pathname);
+      });
+    }
+
+    function showLoader() { loader.classList.remove('hidden'); }
+    function hideLoader() { loader.classList.add('hidden'); }
+
+    function executeScripts(container) {
+      const scripts = container.querySelectorAll('script');
+      scripts.forEach((oldScript) => {
+        const script = document.createElement('script');
+        if (oldScript.src) script.src = oldScript.src;
+        else script.textContent = oldScript.textContent;
+        document.body.appendChild(script);
+        document.body.removeChild(script);
+      });
+    }
+
+    async function navigate(url, push = true) {
+      showLoader();
+      try {
+        const response = await fetch(url, { credentials: 'same-origin' });
+        if (response.redirected && new URL(response.url).pathname === '/') {
+          window.location.href = response.url;
+          return;
+        }
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const newMain = doc.querySelector('#main-content');
+        if (!newMain) {
+          window.location.href = url;
+          return;
+        }
+        mainContent.innerHTML = newMain.innerHTML;
+        executeScripts(mainContent);
+        document.title = doc.title || document.title;
+        setActiveNav(new URL(url, window.location.origin).pathname);
+        if (push) history.pushState({}, '', url);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    document.querySelectorAll('[data-nav]').forEach((link) => {
+      link.addEventListener('mouseenter', () => {
+        const url = link.href;
+        if (!prefetched.has(url)) {
+          prefetched.add(url);
+          fetch(url, { credentials: 'same-origin' }).catch(() => {});
+        }
+      });
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        navigate(link.href);
+      });
+    });
+
+    window.addEventListener('popstate', () => navigate(window.location.href, false));
+    setActiveNav(window.location.pathname);
+  </script>
+</body>
+</html>
