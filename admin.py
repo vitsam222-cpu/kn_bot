@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import asyncio
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -286,14 +287,17 @@ async def save_scenario(
         except json.JSONDecodeError:
             safe_buttons_json = None
 
-    db.upsert_scenario(
-        trigger_text=trigger_text.strip(),
-        bot_reply_text=bot_reply_text.strip(),
-        buttons_json=safe_buttons_json,
-        next_step=next_step,
-        scenario_image_path=scenario_image_path,
-        scenario_id=scenario_id,
-    )
+    try:
+        db.upsert_scenario(
+            trigger_text=trigger_text.strip(),
+            bot_reply_text=bot_reply_text.strip(),
+            buttons_json=safe_buttons_json,
+            next_step=next_step,
+            scenario_image_path=scenario_image_path,
+            scenario_id=scenario_id,
+        )
+    except (sqlite3.IntegrityError, ValueError):
+        return RedirectResponse(f"/scenarios?msg={quote_plus('Ошибка сохранения шага')}", status_code=302)
     return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг сохранен')}", status_code=302)
 
 

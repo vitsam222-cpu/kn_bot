@@ -187,6 +187,13 @@ function onScenarioSubmit(event) {
   const btn = document.getElementById('scenario-submit-btn');
   btn.disabled = true;
   btn.textContent = 'Сохраняем...';
+  window.setTimeout(() => {
+    if (btn.disabled) {
+      btn.disabled = false;
+      btn.textContent = 'Сохранить шаг';
+      alert('Сохранение заняло слишком долго. Проверьте соединение и попробуйте снова.');
+    }
+  }, 12000);
   return true;
 }
 

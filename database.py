@@ -147,6 +147,7 @@ class Database:
         scenario_image_path: str | None = None,
         scenario_id: int | None = None,
     ) -> None:
+        normalized_trigger = trigger_text.strip()
         if buttons_json:
             json.loads(buttons_json)
 
@@ -158,17 +159,39 @@ class Database:
                     SET trigger_text=?, bot_reply_text=?, buttons_json=?, next_step=?, scenario_image_path=?
                     WHERE id=?
                     """,
-                    (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path, scenario_id),
+                    (normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path, scenario_id),
                 )
             else:
+                existing_start = conn.execute(
+                    "SELECT id FROM scenarios WHERE lower(trigger_text)=lower('/start')"
+                ).fetchone()
+                if normalized_trigger.lower() == "/start" and existing_start:
+                    conn.execute(
+                        """
+                        UPDATE scenarios
+                        SET bot_reply_text=?, buttons_json=?, next_step=?, scenario_image_path=?
+                        WHERE id=?
+                        """,
+                        (bot_reply_text, buttons_json, next_step, scenario_image_path, int(existing_start["id"])),
+                    )
+                    return
+
                 total = conn.execute("SELECT COUNT(*) FROM scenarios").fetchone()[0]
-                if total == 0 and trigger_text.strip() == "/start":
+                has_id_1 = conn.execute("SELECT 1 FROM scenarios WHERE id=1").fetchone() is not None
+                if total == 0 and normalized_trigger.lower() == "/start" and not has_id_1:
                     conn.execute(
                         """
                         INSERT INTO scenarios(id, trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
                         VALUES(1, ?, ?, ?, ?, ?)
                         """,
-                        (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                        (normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO sqlite_sequence(name, seq)
+                        VALUES('scenarios', 1)
+                        ON CONFLICT(name) DO UPDATE SET seq=MAX(seq, 1)
+                        """
                     )
                 else:
                     conn.execute(
@@ -176,7 +199,7 @@ class Database:
                         INSERT INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
                         VALUES(?, ?, ?, ?, ?)
                         """,
-                        (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                        (normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path),
                     )
 
     def delete_scenario(self, scenario_id: int) -> None:
