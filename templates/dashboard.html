@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Дашборд</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
+<div class="stats">
+  <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
+  <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
+  <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
+  <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
+</div>
+
+<div class="card">
+  <h2>Рассылка</h2>
+  <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="return onBroadcastSubmit(event)">
+    <textarea name="text" placeholder="Текст сообщения (поддерживается Markdown)" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+
+    <h3>Кнопки</h3>
+    <div id="broadcast-buttons"></div>
+    <div class="button-row-actions">
+      <button type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="broadcast-buttons-json" type="hidden" name="buttons_json" />
+    <label>Отложить до:
+      <input type="datetime-local" name="scheduled_at" />
+    </label>
+    <label>Таймзона:
+      <select name="timezone">
+        {% for tz in timezone_options %}
+          <option value="{{ tz }}">{{ tz }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="button" onclick="showPreview()">Превью</button>
+
+    <button id="broadcast-submit-btn" type="submit">Отправить</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>История рассылок</h2>
+  <table>
+    <tr><th>ID</th><th>Время</th><th>Статус</th><th>План</th><th>Отправлено</th><th>Ошибки</th><th>Текст</th></tr>
+    {% for b in broadcast_history %}
+    <tr>
+      <td>{{ b.id }}</td>
+      <td>{{ b.created_at }}</td>
+      <td>{{ b.status }}</td>
+      <td>{{ b.scheduled_at or "-" }} {{ b.timezone or "" }}</td>
+      <td>{{ b.sent_count }}</td>
+      <td>{{ b.failed_count }}</td>
+      <td>{{ b.message_text[:80] }}{% if b.message_text|length > 80 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Автодожим по посещению шага</h2>
+  <form method="post" action="/broadcast/rule" enctype="multipart/form-data" onsubmit="return onRuleSubmit(event)">
+    <label>Шаг (ID или тег):
+      <input type="text" name="scenario_ref" list="scenario-ref-list" placeholder="например: 2 или docs" required />
+    </label>
+    <datalist id="scenario-ref-list">
+      {% for sc in scenarios %}
+      <option value="{{ sc.id }}">{{ sc.trigger_text }}</option>
+      <option value="{{ sc.trigger_text }}">{{ sc.id }}</option>
+      {% endfor %}
+    </datalist>
+    <label>Отправить через (дней):
+      <input type="number" name="delay_days" min="0" value="3" required />
+    </label>
+    <label>Лимит отправок в 7 дней:
+      <input type="number" name="weekly_limit" min="1" value="1" required />
+    </label>
+    <textarea name="text" placeholder="Текст автосообщения (Markdown)" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+
+    <h3>Кнопки автосообщения</h3>
+    <div id="rule-buttons"></div>
+    <div class="button-row-actions">
+      <button type="button" onclick="addButtonRow('rule-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="rule-buttons-json" type="hidden" name="buttons_json" />
+    <button id="rule-submit-btn" type="submit">Сохранить правило</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Правила автодожима</h2>
+  <table>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th></tr>
+    {% for r in drip_rules %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td>{{ r.scenario_ref }}</td>
+      <td>{{ r.delay_days }}</td>
+      <td>{{ r.weekly_limit }}</td>
+      <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div id="preview-modal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Превью рассылки</h3>
+    <p id="preview-text"></p>
+    <div id="preview-buttons"></div>
+    <button type="button" onclick="hidePreview()">Закрыть</button>
+  </div>
+</div>
+
+<script>
+function addButtonRow(containerId, text = '', url = '') {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'button-row button-row-simple';
+  row.innerHTML = `
+    <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
+    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" />
+    <button type="button" onclick="this.parentElement.remove()">Удалить</button>
+  `;
+  container.appendChild(row);
+}
+
+function buildButtonsJson(prefix) {
+  const rows = Array.from(document.querySelectorAll(`#${prefix}-buttons .button-row`));
+  const buttons = rows
+    .map((row) => {
+      const text = row.querySelector('.btn-text').value.trim();
+      const url = row.querySelector('.btn-url').value.trim();
+      if (!text || !url) return null;
+      return { text, url };
+    })
+    .filter(Boolean);
+
+  const hidden = document.getElementById(`${prefix}-buttons-json`);
+  hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function onBroadcastSubmit(event) {
+  buildButtonsJson('broadcast');
+  const btn = document.getElementById('broadcast-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Отправляем...';
+  return true;
+}
+
+function onRuleSubmit(event) {
+  buildButtonsJson('rule');
+  const btn = document.getElementById('rule-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Сохраняем...';
+  return true;
+}
+
+function showPreview() {
+  buildButtonsJson('broadcast');
+  const text = document.querySelector('textarea[name=\"text\"]').value;
+  const buttonsJson = document.getElementById('broadcast-buttons-json').value;
+  document.getElementById('preview-text').textContent = text || '(пусто)';
+  const wrap = document.getElementById('preview-buttons');
+  wrap.innerHTML = '';
+  if (buttonsJson) {
+    try {
+      const buttons = JSON.parse(buttonsJson).flat();
+      buttons.forEach((btn) => {
+        const el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = btn.text + ' → ' + (btn.url || '');
+        wrap.appendChild(el);
+      });
+    } catch (_) {}
+  }
+  document.getElementById('preview-modal').classList.remove('hidden');
+}
+
+function hidePreview() {
+  document.getElementById('preview-modal').classList.add('hidden');
+}
+</script>
+{% endblock %}
