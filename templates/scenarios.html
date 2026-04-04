@@ -143,9 +143,23 @@ function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '
     <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" ${mode !== 'url' ? 'style=\"display:none\"' : ''} />
     <input type="number" class="btn-step-id" placeholder="ID шага" value="${stepId}" ${mode !== 'id' ? 'style=\"display:none\"' : ''} />
     <input type="text" class="btn-step-tag" placeholder="Тег (например docs)" value="${stepTag}" ${mode !== 'tag' ? 'style=\"display:none\"' : ''} />
+    <button type="button" title="Выше" onclick="moveButtonRow(this, -1)">↑</button>
+    <button type="button" title="Ниже" onclick="moveButtonRow(this, 1)">↓</button>
     <button type="button" onclick="this.parentElement.remove()">Удалить</button>
   `;
   container.appendChild(row);
+}
+
+function moveButtonRow(btn, direction) {
+  const row = btn.closest('.button-row');
+  if (!row) return;
+  const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (!sibling) return;
+  if (direction < 0) {
+    row.parentNode.insertBefore(row, sibling);
+  } else {
+    row.parentNode.insertBefore(sibling, row);
+  }
 }
 
 function toggleButtonFields(select) {
@@ -193,13 +207,6 @@ function onScenarioSubmit(event) {
   const btn = document.getElementById('scenario-submit-btn');
   btn.disabled = true;
   btn.textContent = 'Сохраняем...';
-  window.setTimeout(() => {
-    if (btn.disabled) {
-      btn.disabled = false;
-      btn.textContent = 'Сохранить шаг';
-      alert('Сохранение заняло слишком долго. Проверьте соединение и попробуйте снова.');
-    }
-  }, 12000);
   return true;
 }
 
