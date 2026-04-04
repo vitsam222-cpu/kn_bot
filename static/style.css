@@ -1,0 +1,18 @@
+body { font-family: Arial, sans-serif; margin: 0; background: #f7f7fb; }
+nav { background: #20263a; padding: 12px 18px; }
+nav a { color: #fff; margin-right: 14px; text-decoration: none; }
+main { padding: 20px; }
+.card { background: #fff; padding: 16px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(180px, 320px)); gap: 12px; }
+textarea, input { width: 100%; box-sizing: border-box; padding: 8px; margin: 8px 0; }
+button, .btn { background: #3b6cff; color: #fff; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; text-decoration: none; display:inline-block; }
+table { width: 100%; border-collapse: collapse; background: white; }
+th, td { border: 1px solid #e6e6f0; padding: 8px; vertical-align: top; text-align: left; }
+.error { color: #d10000; }
+code { white-space: pre-wrap; }
+
+.button-row { display: grid; grid-template-columns: 1fr 140px 1fr 140px auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+.button-row-simple { grid-template-columns: 1fr 1fr auto; }
+.button-row-actions { margin-bottom: 10px; }
+.chip { display: inline-block; background: #eef2ff; color: #233c8b; border-radius: 14px; padding: 4px 10px; margin: 2px; font-size: 13px; }
+.btn-edit { margin-bottom: 6px; width: 100%; }
