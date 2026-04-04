@@ -203,18 +203,20 @@ async def broadcast(
 @app.post("/broadcast/rule")
 async def create_step_rule(
     request: Request,
+    rule_id: int | None = Form(None),
     scenario_ref: str = Form(...),
     delay_days: int = Form(3),
     weekly_limit: int = Form(1),
     text: str = Form(...),
     buttons_json: str = Form(""),
     photo: UploadFile | None = File(None),
+    existing_photo_path: str = Form(""),
 ):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
 
     image_data = await photo.read() if photo and photo.filename else None
-    photo_path = None
+    photo_path = existing_photo_path.strip() or None
     if image_data:
         ext = Path(photo.filename or "").suffix or ".jpg"
         filename = f"{uuid4().hex}{ext}"
@@ -222,15 +224,17 @@ async def create_step_rule(
         saved.write_bytes(image_data)
         photo_path = str(saved.resolve())
 
-    db.create_step_broadcast_rule(
+    db.upsert_step_broadcast_rule(
         scenario_ref=scenario_ref,
         delay_days=max(delay_days, 0),
         weekly_limit=max(weekly_limit, 1),
         message_text=text.strip(),
         buttons_json=buttons_json.strip() or None,
         photo_path=photo_path,
+        rule_id=rule_id,
     )
-    return RedirectResponse(f"/dashboard?msg={quote_plus('Правило автодожима сохранено')}", status_code=302)
+    msg = "Правило автодожима обновлено" if rule_id else "Правило автодожима сохранено"
+    return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
 
 
 @app.on_event("startup")

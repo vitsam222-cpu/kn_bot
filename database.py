@@ -434,6 +434,44 @@ class Database:
             )
             return int(cur.lastrowid)
 
+    def upsert_step_broadcast_rule(
+        self,
+        scenario_ref: str,
+        delay_days: int,
+        weekly_limit: int,
+        message_text: str,
+        buttons_json: str | None = None,
+        photo_path: str | None = None,
+        rule_id: int | None = None,
+    ) -> int:
+        if rule_id:
+            with self.connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE step_broadcast_rules
+                    SET scenario_ref=?, delay_days=?, weekly_limit=?, message_text=?, buttons_json=?, photo_path=?
+                    WHERE id=?
+                    """,
+                    (
+                        scenario_ref.strip(),
+                        delay_days,
+                        weekly_limit,
+                        message_text,
+                        buttons_json,
+                        photo_path,
+                        rule_id,
+                    ),
+                )
+            return int(rule_id)
+        return self.create_step_broadcast_rule(
+            scenario_ref=scenario_ref,
+            delay_days=delay_days,
+            weekly_limit=weekly_limit,
+            message_text=message_text,
+            buttons_json=buttons_json,
+            photo_path=photo_path,
+        )
+
     def get_step_broadcast_rules(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(

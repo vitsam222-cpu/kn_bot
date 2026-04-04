@@ -61,8 +61,10 @@
 <div class="card">
   <h2>Автодожим по посещению шага</h2>
   <form method="post" action="/broadcast/rule" enctype="multipart/form-data" onsubmit="return onRuleSubmit(event)">
+    <input type="hidden" name="rule_id" id="rule-id-input" />
+    <input type="hidden" name="existing_photo_path" id="rule-existing-photo-path" />
     <label>Шаг (ID или тег):
-      <input type="text" name="scenario_ref" list="scenario-ref-list" placeholder="например: 2 или docs" required />
+      <input type="text" name="scenario_ref" id="rule-scenario-ref" list="scenario-ref-list" placeholder="например: 2 или docs" required />
     </label>
     <datalist id="scenario-ref-list">
       {% for sc in scenarios %}
@@ -71,13 +73,14 @@
       {% endfor %}
     </datalist>
     <label>Отправить через (дней):
-      <input type="number" name="delay_days" min="0" value="3" required />
+      <input type="number" name="delay_days" id="rule-delay-days" min="0" value="3" required />
     </label>
     <label>Лимит отправок в 7 дней:
-      <input type="number" name="weekly_limit" min="1" value="1" required />
+      <input type="number" name="weekly_limit" id="rule-weekly-limit" min="1" value="1" required />
     </label>
-    <textarea name="text" placeholder="Текст автосообщения (Markdown)" required></textarea>
+    <textarea name="text" id="rule-text" placeholder="Текст автосообщения (Markdown)" required></textarea>
     <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+    <small id="rule-existing-photo-label"></small>
 
     <h3>Кнопки автосообщения</h3>
     <div id="rule-buttons"></div>
@@ -86,13 +89,14 @@
     </div>
     <input id="rule-buttons-json" type="hidden" name="buttons_json" />
     <button id="rule-submit-btn" type="submit">Сохранить правило</button>
+    <button type="button" onclick="resetRuleForm()">Новое правило</button>
   </form>
 </div>
 
 <div class="card">
   <h2>Правила автодожима</h2>
   <table>
-    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th></tr>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th><th></th></tr>
     {% for r in drip_rules %}
     <tr>
       <td>{{ r.id }}</td>
@@ -100,6 +104,19 @@
       <td>{{ r.delay_days }}</td>
       <td>{{ r.weekly_limit }}</td>
       <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
+      <td>
+        <button
+          type="button"
+          data-id="{{ r.id }}"
+          data-scenario-ref="{{ r.scenario_ref }}"
+          data-delay-days="{{ r.delay_days }}"
+          data-weekly-limit="{{ r.weekly_limit }}"
+          data-text="{{ r.message_text }}"
+          data-buttons='{{ r.buttons_json or "[]" }}'
+          data-photo-path="{{ r.photo_path or '' }}"
+          onclick="editRule(this)"
+        >Редактировать</button>
+      </td>
     </tr>
     {% endfor %}
   </table>
@@ -156,6 +173,41 @@ function onRuleSubmit(event) {
   btn.disabled = true;
   btn.textContent = 'Сохраняем...';
   return true;
+}
+
+function editRule(btn) {
+  document.getElementById('rule-id-input').value = btn.dataset.id || '';
+  document.getElementById('rule-scenario-ref').value = btn.dataset.scenarioRef || '';
+  document.getElementById('rule-delay-days').value = btn.dataset.delayDays || 3;
+  document.getElementById('rule-weekly-limit').value = btn.dataset.weeklyLimit || 1;
+  document.getElementById('rule-text').value = btn.dataset.text || '';
+  document.getElementById('rule-existing-photo-path').value = btn.dataset.photoPath || '';
+  document.getElementById('rule-existing-photo-label').textContent = btn.dataset.photoPath ? `Текущее фото: ${btn.dataset.photoPath}` : '';
+
+  const container = document.getElementById('rule-buttons');
+  container.innerHTML = '';
+  let parsed = [];
+  try { parsed = JSON.parse(btn.dataset.buttons || '[]'); } catch (_) {}
+  parsed.flat().forEach((item) => {
+    if (item.url) {
+      addButtonRow('rule-buttons', item.text || '', item.url || '');
+    }
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetRuleForm() {
+  document.getElementById('rule-id-input').value = '';
+  document.getElementById('rule-scenario-ref').value = '';
+  document.getElementById('rule-delay-days').value = 3;
+  document.getElementById('rule-weekly-limit').value = 1;
+  document.getElementById('rule-text').value = '';
+  document.getElementById('rule-existing-photo-path').value = '';
+  document.getElementById('rule-existing-photo-label').textContent = '';
+  document.getElementById('rule-buttons').innerHTML = '';
+  const btn = document.getElementById('rule-submit-btn');
+  btn.disabled = false;
+  btn.textContent = 'Сохранить правило';
 }
 
 function showPreview() {
