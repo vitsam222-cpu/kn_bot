@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Пользователи</h1>
+<a class="btn" href="/users/export">Скачать CSV</a>
+<table>
+  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Статус</th><th>Действие</th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.user_id }}</td>
+    <td>@{{ u.username or "-" }}</td>
+    <td>{{ u.created_at }}</td>
+    <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
+    <td>
+      <form method="post" action="/users/toggle-ban">
+        <input type="hidden" name="user_id" value="{{ u.user_id }}" />
+        <input type="hidden" name="banned" value="{{ 0 if u.is_banned else 1 }}" />
+        <button type="submit">{{ "Разбан" if u.is_banned else "Бан" }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
