@@ -95,6 +95,16 @@ class Database:
             }
             if "last_seen_at" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP")
+            start_exists = conn.execute(
+                "SELECT 1 FROM scenarios WHERE lower(trigger_text)=lower('/start')"
+            ).fetchone()
+            if not start_exists:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
+                    VALUES('/start', 'Добро пожаловать! Выберите раздел ниже.', NULL, NULL, NULL)
+                    """
+                )
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -166,7 +176,7 @@ class Database:
 
         with self.connect() as conn:
             if scenario_id:
-                conn.execute(
+                cur = conn.execute(
                     """
                     UPDATE scenarios
                     SET trigger_text=?, bot_reply_text=?, buttons_json=?, next_step=?, scenario_image_path=?
@@ -174,6 +184,15 @@ class Database:
                     """,
                     (normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path, scenario_id),
                 )
+                if cur.rowcount == 0:
+                    conn.execute(
+                        """
+                        INSERT INTO scenarios(id, trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
+                        VALUES(?, ?, ?, ?, ?, ?)
+                        """,
+                        (scenario_id, normalized_trigger, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                    )
+                return
             else:
                 existing_start = conn.execute(
                     "SELECT id FROM scenarios WHERE lower(trigger_text)=lower('/start')"
