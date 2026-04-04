@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Сценарии</h1>
+<div class="card">
+  <form method="post" action="/scenarios/save">
+    <input type="number" name="scenario_id" placeholder="ID (для редактирования)" />
+    <input type="text" name="trigger_text" placeholder="Триггер" required />
+    <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
+    <textarea name="buttons_json" placeholder='JSON кнопок, например [[{"text":"Открыть","url":"https://example.com"}]]'></textarea>
+    <input type="number" name="next_step" placeholder="Следующий шаг (ID)" />
+    <button type="submit">Сохранить</button>
+  </form>
+</div>
+
+<table>
+  <tr><th>ID</th><th>Триггер</th><th>Ответ</th><th>Кнопки JSON</th><th>След. шаг</th><th></th></tr>
+  {% for sc in scenarios %}
+  <tr>
+    <td>{{ sc.id }}</td>
+    <td>{{ sc.trigger_text }}</td>
+    <td>{{ sc.bot_reply_text[:80] }}{% if sc.bot_reply_text|length > 80 %}...{% endif %}</td>
+    <td><code>{{ sc.buttons_json or "-" }}</code></td>
+    <td>{{ sc.next_step or "-" }}</td>
+    <td>
+      <form method="post" action="/scenarios/delete" onsubmit="return confirm('Удалить?')">
+        <input type="hidden" name="scenario_id" value="{{ sc.id }}" />
+        <button type="submit">Удалить</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
