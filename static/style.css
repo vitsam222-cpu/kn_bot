@@ -30,3 +30,4 @@ code { white-space: pre-wrap; }
 .sim-box { margin-top: 10px; border: 1px solid #dbe2f3; border-radius: 8px; padding: 12px; background: #fafcff; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 1001; }
 .modal-content { background: #fff; width: min(640px, 92vw); border-radius: 10px; padding: 16px; }
+.modal.hidden { display: none !important; }
