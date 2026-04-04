@@ -4,6 +4,7 @@ import json
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 from uuid import uuid4
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -85,10 +86,11 @@ async def dashboard(request: Request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
     history = db.get_broadcast_history()
+    flash_msg = request.query_params.get("msg")
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={**stats, "broadcast_history": history, "timezone_options": TIMEZONE_OPTIONS},
+        context={**stats, "broadcast_history": history, "timezone_options": TIMEZONE_OPTIONS, "flash_msg": flash_msg},
     )
 
 
@@ -151,7 +153,7 @@ async def broadcast(
         filename = f"{uuid4().hex}{ext}"
         saved = BROADCAST_UPLOAD_DIR / filename
         saved.write_bytes(image_data)
-        photo_path = str(saved)
+        photo_path = str(saved.resolve())
 
     schedule_utc = None
     if scheduled_at.strip():
@@ -168,6 +170,7 @@ async def broadcast(
             scheduled_at=schedule_utc,
             status="pending",
         )
+        msg = "Рассылка запланирована"
     else:
         user_ids = db.get_active_user_ids()
         broadcast_id = db.log_broadcast(
@@ -182,7 +185,8 @@ async def broadcast(
         db.update_broadcast_status(
             broadcast_id, status="done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
         )
-    return RedirectResponse("/dashboard", status_code=302)
+        msg = f"Рассылка отправлена: {result['sent']} успешно, {result['failed']} ошибок"
+    return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
 
 
 @app.on_event("startup")
@@ -248,6 +252,7 @@ async def scenarios_page(request: Request):
             "start_scenario": start_scenario,
             "broken_links": broken_links,
             "orphan_ids": orphan_ids,
+            "flash_msg": request.query_params.get("msg"),
         },
     )
 
@@ -272,7 +277,7 @@ async def save_scenario(
         filename = f"{uuid4().hex}{ext}"
         image_path = SCENARIO_UPLOAD_DIR / filename
         image_path.write_bytes(await scenario_image.read())
-        scenario_image_path = str(image_path)
+        scenario_image_path = str(image_path.resolve())
 
     safe_buttons_json = buttons_json.strip() or None
     if safe_buttons_json:
@@ -289,7 +294,7 @@ async def save_scenario(
         scenario_image_path=scenario_image_path,
         scenario_id=scenario_id,
     )
-    return RedirectResponse("/scenarios", status_code=302)
+    return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг сохранен')}", status_code=302)
 
 
 @app.post("/scenarios/delete")
@@ -297,7 +302,7 @@ async def delete_scenario(request: Request, scenario_id: int = Form(...)):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     db.delete_scenario(scenario_id)
-    return RedirectResponse("/scenarios", status_code=302)
+    return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг удален')}", status_code=302)
 
 
 @app.get("/users", response_class=HTMLResponse)

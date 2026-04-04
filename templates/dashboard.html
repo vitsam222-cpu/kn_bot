@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Дашборд</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
 <div class="stats">
   <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
   <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
@@ -10,7 +13,7 @@
 
 <div class="card">
   <h2>Рассылка</h2>
-  <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="buildButtonsJson('broadcast')">
+  <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="return onBroadcastSubmit(event)">
     <textarea name="text" placeholder="Текст сообщения" required></textarea>
     <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
 
@@ -33,7 +36,7 @@
 
     <button type="button" onclick="showPreview()">Превью</button>
 
-    <button type="submit">Отправить</button>
+    <button id="broadcast-submit-btn" type="submit">Отправить</button>
   </form>
 </div>
 
@@ -90,6 +93,14 @@ function buildButtonsJson(prefix) {
 
   const hidden = document.getElementById(`${prefix}-buttons-json`);
   hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function onBroadcastSubmit(event) {
+  buildButtonsJson('broadcast');
+  const btn = document.getElementById('broadcast-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Отправляем...';
+  return true;
 }
 
 function showPreview() {

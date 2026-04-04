@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Сценарии</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
 <div class="card">
   <h2>Первый шаг бота (/start)</h2>
   {% if start_scenario %}
@@ -11,7 +14,7 @@
   {% endif %}
 </div>
 <div class="card">
-  <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="buildButtonsJson('scenario')">
+  <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="return onScenarioSubmit(event)">
     <input id="scenario-id-input" type="number" name="scenario_id" placeholder="ID (для редактирования)" />
     <input type="text" name="trigger_text" placeholder="Триггер" required />
     <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
@@ -27,7 +30,7 @@
     <input id="scenario-buttons-json" type="hidden" name="buttons_json" />
 
     <input type="number" name="next_step" placeholder="Следующий шаг (ID)" />
-    <button type="submit">Сохранить</button>
+    <button id="scenario-submit-btn" type="submit">Сохранить шаг</button>
   </form>
 </div>
 
@@ -179,6 +182,14 @@ function buildButtonsJson(prefix) {
   hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
 }
 
+function onScenarioSubmit(event) {
+  buildButtonsJson('scenario');
+  const btn = document.getElementById('scenario-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Сохраняем...';
+  return true;
+}
+
 function editScenario(btn) {
   const form = document.getElementById('scenario-form');
   document.getElementById('scenario-id-input').value = btn.dataset.id || '';
@@ -203,6 +214,7 @@ function editScenario(btn) {
       addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
     }
   });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function createStartScenario() {

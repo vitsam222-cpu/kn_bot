@@ -161,13 +161,23 @@ class Database:
                     (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path, scenario_id),
                 )
             else:
-                conn.execute(
-                    """
-                    INSERT INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
-                    VALUES(?, ?, ?, ?, ?)
-                    """,
-                    (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
-                )
+                total = conn.execute("SELECT COUNT(*) FROM scenarios").fetchone()[0]
+                if total == 0 and trigger_text.strip() == "/start":
+                    conn.execute(
+                        """
+                        INSERT INTO scenarios(id, trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
+                        VALUES(1, ?, ?, ?, ?, ?)
+                        """,
+                        (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO scenarios(trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path)
+                        VALUES(?, ?, ?, ?, ?)
+                        """,
+                        (trigger_text, bot_reply_text, buttons_json, next_step, scenario_image_path),
+                    )
 
     def delete_scenario(self, scenario_id: int) -> None:
         with self.connect() as conn:

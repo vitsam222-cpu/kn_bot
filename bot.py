@@ -5,7 +5,7 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import settings
 from database import Database
@@ -54,7 +54,7 @@ async def send_scenario_message(message: Message, scenario: dict) -> None:
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():
         try:
-            await message.answer_photo(photo=image_path, caption=scenario["bot_reply_text"], reply_markup=markup)
+            await message.answer_photo(photo=FSInputFile(image_path), caption=scenario["bot_reply_text"], reply_markup=markup)
             return
         except Exception:
             # fallback to text if image sending fails
