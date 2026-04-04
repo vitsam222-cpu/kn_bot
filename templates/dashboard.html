@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Дашборд</h1>
+<div class="stats">
+  <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
+  <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
+</div>
+
+<div class="card">
+  <h2>Рассылка</h2>
+  <form method="post" action="/broadcast" enctype="multipart/form-data">
+    <textarea name="text" placeholder="Текст сообщения" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+    <textarea id="buttons_json" name="buttons_json" placeholder='[[{"text":"Сайт","url":"https://..."}]]'></textarea>
+    <button type="submit">Отправить</button>
+  </form>
+</div>
+{% endblock %}
