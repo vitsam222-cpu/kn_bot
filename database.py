@@ -15,9 +15,10 @@ class Database:
 
     @contextmanager
     def connect(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=5)
         conn.row_factory = sqlite3.Row
         try:
+            conn.execute("PRAGMA busy_timeout = 5000;")
             yield conn
             conn.commit()
         finally:
@@ -25,6 +26,8 @@ class Database:
 
     def init_db(self) -> None:
         with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS users (
@@ -88,6 +91,11 @@ class Database:
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM scenarios ORDER BY id").fetchall()
         return [dict(r) for r in rows]
+
+    def get_scenario_by_id(self, scenario_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM scenarios WHERE id = ?", (scenario_id,)).fetchone()
+        return dict(row) if row else None
 
     def upsert_scenario(
         self,

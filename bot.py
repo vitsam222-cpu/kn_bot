@@ -4,7 +4,7 @@ import logging
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from config import settings
 from database import Database
@@ -32,10 +32,13 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
             text = item.get("text")
             url = item.get("url")
             callback_data = item.get("callback_data")
+            step_id = item.get("step_id")
             if not text:
                 continue
             if url:
                 line.append(InlineKeyboardButton(text=text, url=url))
+            elif step_id:
+                line.append(InlineKeyboardButton(text=text, callback_data=f"step:{step_id}"))
             elif callback_data:
                 line.append(InlineKeyboardButton(text=text, callback_data=callback_data))
         if line:
@@ -70,6 +73,28 @@ async def process_text_message(message: Message) -> None:
         return
 
     await message.answer("Сценарий не найден. Обратитесь к администратору.")
+
+
+@dp.callback_query(F.data.startswith("step:"))
+async def process_step_callback(callback: CallbackQuery) -> None:
+    if db.is_blacklisted(callback.from_user.id):
+        await callback.answer()
+        return
+
+    try:
+        step_id = int(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("Некорректный шаг", show_alert=True)
+        return
+
+    scenario = db.get_scenario_by_id(step_id)
+    if not scenario:
+        await callback.answer("Шаг не найден", show_alert=True)
+        return
+
+    markup = build_keyboard(scenario.get("buttons_json"))
+    await callback.message.answer(scenario["bot_reply_text"], reply_markup=markup)
+    await callback.answer()
 
 
 async def main() -> None:

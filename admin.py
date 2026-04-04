@@ -25,6 +25,29 @@ def is_auth(request: Request) -> bool:
     return request.session.get("auth") is True
 
 
+def extract_transitions(scenario: dict[str, Any]) -> list[int]:
+    transitions: set[int] = set()
+    next_step = scenario.get("next_step")
+    if isinstance(next_step, int):
+        transitions.add(next_step)
+
+    buttons_json = scenario.get("buttons_json")
+    if buttons_json:
+        try:
+            rows = json.loads(buttons_json)
+            for row in rows:
+                for button in row:
+                    step_id = button.get("step_id")
+                    if isinstance(step_id, int):
+                        transitions.add(step_id)
+                    elif isinstance(step_id, str) and step_id.isdigit():
+                        transitions.add(int(step_id))
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+
+    return sorted(transitions)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
     if is_auth(request):
@@ -110,7 +133,15 @@ async def scenarios_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     scenarios = db.get_all_scenarios()
-    return templates.TemplateResponse(request=request, name="scenarios.html", context={"scenarios": scenarios})
+    scenario_branches = [
+        {"id": scenario["id"], "trigger_text": scenario["trigger_text"], "transitions": extract_transitions(scenario)}
+        for scenario in scenarios
+    ]
+    return templates.TemplateResponse(
+        request=request,
+        name="scenarios.html",
+        context={"scenarios": scenarios, "scenario_branches": scenario_branches},
+    )
 
 
 @app.post("/scenarios/save")

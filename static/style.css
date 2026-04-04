@@ -11,5 +11,7 @@ th, td { border: 1px solid #e6e6f0; padding: 8px; vertical-align: top; text-alig
 .error { color: #d10000; }
 code { white-space: pre-wrap; }
 
-.button-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 8px; }
+.button-row { display: grid; grid-template-columns: 1fr 140px 1fr 140px auto; gap: 8px; margin-bottom: 8px; align-items: center; }
+.button-row-simple { grid-template-columns: 1fr 1fr auto; }
 .button-row-actions { margin-bottom: 10px; }
+.chip { display: inline-block; background: #eef2ff; color: #233c8b; border-radius: 14px; padding: 4px 10px; margin: 2px; font-size: 13px; }

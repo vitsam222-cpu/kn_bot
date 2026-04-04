@@ -27,7 +27,7 @@
 function addButtonRow(containerId, text = '', url = '') {
   const container = document.getElementById(containerId);
   const row = document.createElement('div');
-  row.className = 'button-row';
+  row.className = 'button-row button-row-simple';
   row.innerHTML = `
     <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
     <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" />
