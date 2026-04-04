@@ -34,12 +34,15 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
             url = item.get("url")
             callback_data = item.get("callback_data")
             step_id = item.get("step_id")
+            step_trigger = item.get("step_trigger")
             if not text:
                 continue
             if url:
                 line.append(InlineKeyboardButton(text=text, url=url))
             elif step_id:
                 line.append(InlineKeyboardButton(text=text, callback_data=f"step:{step_id}"))
+            elif step_trigger:
+                line.append(InlineKeyboardButton(text=text, callback_data=f"stepref:{step_trigger}"))
             elif callback_data:
                 line.append(InlineKeyboardButton(text=text, callback_data=callback_data))
         if line:
@@ -113,6 +116,28 @@ async def process_step_callback(callback: CallbackQuery) -> None:
         return
 
     db.add_user_event(callback.from_user.id, "callback_step", callback.data)
+    await send_scenario_message(callback.message, scenario)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("stepref:"))
+async def process_stepref_callback(callback: CallbackQuery) -> None:
+    if db.is_blacklisted(callback.from_user.id):
+        await callback.answer()
+        return
+
+    try:
+        step_ref = callback.data.split(":", 1)[1].strip()
+    except (ValueError, IndexError, AttributeError):
+        await callback.answer("Некорректный шаг", show_alert=True)
+        return
+
+    scenario = db.get_scenario_by_trigger(step_ref)
+    if not scenario:
+        await callback.answer("Шаг не найден", show_alert=True)
+        return
+
+    db.add_user_event(callback.from_user.id, "callback_stepref", callback.data)
     await send_scenario_message(callback.message, scenario)
     await callback.answer()
 

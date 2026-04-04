@@ -138,6 +138,19 @@ class Database:
             row = conn.execute("SELECT * FROM scenarios WHERE id = ?", (scenario_id,)).fetchone()
         return dict(row) if row else None
 
+    def resolve_scenario_ref(self, ref_value: str | None) -> int | None:
+        if ref_value is None:
+            return None
+        normalized = ref_value.strip()
+        if not normalized:
+            return None
+        if normalized.isdigit():
+            return int(normalized)
+        scenario = self.get_scenario_by_trigger(normalized)
+        if scenario:
+            return int(scenario["id"])
+        return None
+
     def upsert_scenario(
         self,
         trigger_text: str,

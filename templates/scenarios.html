@@ -15,7 +15,7 @@
 </div>
 <div class="card">
   <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="return onScenarioSubmit(event)">
-    <input id="scenario-id-input" type="number" name="scenario_id" placeholder="ID (для редактирования)" />
+    <input id="scenario-id-input" type="text" name="scenario_id" placeholder="ID или триггер (для редактирования)" />
     <input type="text" name="trigger_text" placeholder="Триггер" required />
     <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
     <label>Изображение шага: <input type="file" name="scenario_image" accept="image/*" /></label>
@@ -29,7 +29,7 @@
     </div>
     <input id="scenario-buttons-json" type="hidden" name="buttons_json" />
 
-    <input type="number" name="next_step" placeholder="Следующий шаг (ID)" />
+    <input type="text" name="next_step" placeholder="Следующий шаг (ID или триггер)" />
     <button id="scenario-submit-btn" type="submit">Сохранить шаг</button>
   </form>
 </div>
@@ -139,7 +139,7 @@ function addButtonRow(containerId, text = '', mode = 'url', url = '', stepId = '
       <option value="step" ${mode === 'step' ? 'selected' : ''}>Шаг (ID)</option>
     </select>
     <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" ${mode === 'step' ? 'style=\"display:none\"' : ''} />
-    <input type="number" class="btn-step-id" placeholder="ID шага" value="${stepId}" ${mode === 'url' ? 'style=\"display:none\"' : ''} />
+    <input type="text" class="btn-step-id" placeholder="ID или триггер шага" value="${stepId}" ${mode === 'url' ? 'style=\"display:none\"' : ''} />
     <button type="button" onclick="this.parentElement.remove()">Удалить</button>
   `;
   container.appendChild(row);
@@ -167,9 +167,12 @@ function buildButtonsJson(prefix) {
       if (!text) return null;
 
       if (mode === 'step') {
-        const stepId = row.querySelector('.btn-step-id').value.trim();
-        if (!stepId) return null;
-        return { text, step_id: Number(stepId) };
+        const stepRef = row.querySelector('.btn-step-id').value.trim();
+        if (!stepRef) return null;
+        if (/^\d+$/.test(stepRef)) {
+          return { text, step_id: Number(stepRef) };
+        }
+        return { text, step_trigger: stepRef };
       }
 
       const url = row.querySelector('.btn-url').value.trim();

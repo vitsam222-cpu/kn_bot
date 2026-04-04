@@ -261,11 +261,11 @@ async def scenarios_page(request: Request):
 @app.post("/scenarios/save")
 async def save_scenario(
     request: Request,
-    scenario_id: int | None = Form(None),
+    scenario_id: str = Form(""),
     trigger_text: str = Form(...),
     bot_reply_text: str = Form(...),
     buttons_json: str = Form(""),
-    next_step: int | None = Form(None),
+    next_step: str = Form(""),
     scenario_image: UploadFile | None = File(None),
     existing_image_path: str = Form(""),
 ):
@@ -280,10 +280,25 @@ async def save_scenario(
         image_path.write_bytes(await scenario_image.read())
         scenario_image_path = str(image_path.resolve())
 
+    parsed_scenario_id = db.resolve_scenario_ref(scenario_id)
+    parsed_next_step = db.resolve_scenario_ref(next_step)
+    if scenario_id.strip() and parsed_scenario_id is None:
+        return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг для редактирования не найден')}", status_code=302)
+    if next_step.strip() and parsed_next_step is None:
+        return RedirectResponse(f"/scenarios?msg={quote_plus('Следующий шаг не найден')}", status_code=302)
+
     safe_buttons_json = buttons_json.strip() or None
     if safe_buttons_json:
         try:
-            json.loads(safe_buttons_json)
+            payload = json.loads(safe_buttons_json)
+            for row in payload:
+                for button in row:
+                    step_trigger = button.get("step_trigger")
+                    if step_trigger and not button.get("step_id"):
+                        resolved_id = db.resolve_scenario_ref(str(step_trigger))
+                        if resolved_id:
+                            button["step_id"] = resolved_id
+            safe_buttons_json = json.dumps(payload, ensure_ascii=False)
         except json.JSONDecodeError:
             safe_buttons_json = None
 
@@ -292,9 +307,9 @@ async def save_scenario(
             trigger_text=trigger_text.strip(),
             bot_reply_text=bot_reply_text.strip(),
             buttons_json=safe_buttons_json,
-            next_step=next_step,
+            next_step=parsed_next_step,
             scenario_image_path=scenario_image_path,
-            scenario_id=scenario_id,
+            scenario_id=parsed_scenario_id,
         )
     except (sqlite3.IntegrityError, ValueError):
         return RedirectResponse(f"/scenarios?msg={quote_plus('Ошибка сохранения шага')}", status_code=302)
