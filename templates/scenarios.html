@@ -31,6 +31,7 @@
 
     <input type="text" name="next_step" placeholder="Следующий шаг (ID или триггер)" />
     <button id="scenario-submit-btn" type="submit">Сохранить шаг</button>
+    <button type="button" onclick="resetScenarioForm()">Новый шаг</button>
   </form>
 </div>
 
@@ -222,21 +223,32 @@ function editScenario(btn) {
       addButtonRow('scenario-buttons', item.text || '', 'url', item.url || '', '');
     } else if (item.step_id) {
       addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_id);
+    } else if (item.step_trigger) {
+      addButtonRow('scenario-buttons', item.text || '', 'step', '', item.step_trigger);
     }
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function createStartScenario() {
+function resetScenarioForm() {
   const form = document.getElementById('scenario-form');
   document.getElementById('scenario-id-input').value = '';
-  form.querySelector('input[name=\"trigger_text\"]').value = '/start';
-  form.querySelector('textarea[name=\"bot_reply_text\"]').value = 'Добро пожаловать! Выберите раздел ниже.';
+  form.querySelector('input[name=\"trigger_text\"]').value = '';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = '';
   form.querySelector('input[name=\"next_step\"]').value = '';
   document.getElementById('existing-image-path').value = '';
   document.getElementById('existing-image-label').textContent = '';
   document.getElementById('scenario-buttons').innerHTML = '';
+  document.getElementById('scenario-submit-btn').disabled = false;
+  document.getElementById('scenario-submit-btn').textContent = 'Сохранить шаг';
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function createStartScenario() {
+  resetScenarioForm();
+  const form = document.getElementById('scenario-form');
+  form.querySelector('input[name=\"trigger_text\"]').value = '/start';
+  form.querySelector('textarea[name=\"bot_reply_text\"]').value = 'Добро пожаловать! Выберите раздел ниже.';
 }
 
 const scenarioMap = {{ scenarios|tojson }};

@@ -282,17 +282,25 @@ async def save_scenario(
 
     parsed_scenario_id = db.resolve_scenario_ref(scenario_id)
     parsed_next_step = db.resolve_scenario_ref(next_step)
-    if scenario_id.strip() and parsed_scenario_id is None:
-        return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг для редактирования не найден')}", status_code=302)
-    if next_step.strip() and parsed_next_step is None:
-        return RedirectResponse(f"/scenarios?msg={quote_plus('Следующий шаг не найден')}", status_code=302)
+    scenario_ref_raw = scenario_id.strip()
+    next_step_raw = next_step.strip()
+    if scenario_ref_raw and parsed_scenario_id is None and scenario_ref_raw.isdigit():
+        parsed_scenario_id = int(scenario_ref_raw)
 
     safe_buttons_json = buttons_json.strip() or None
     if safe_buttons_json:
         try:
             payload = json.loads(safe_buttons_json)
+            if isinstance(payload, dict):
+                payload = [[payload]]
+            if not isinstance(payload, list):
+                payload = []
             for row in payload:
+                if not isinstance(row, list):
+                    continue
                 for button in row:
+                    if not isinstance(button, dict):
+                        continue
                     step_trigger = button.get("step_trigger")
                     if step_trigger and not button.get("step_id"):
                         resolved_id = db.resolve_scenario_ref(str(step_trigger))
@@ -301,6 +309,9 @@ async def save_scenario(
             safe_buttons_json = json.dumps(payload, ensure_ascii=False)
         except json.JSONDecodeError:
             safe_buttons_json = None
+
+    if next_step_raw and parsed_next_step is None and next_step_raw.isdigit():
+        parsed_next_step = int(next_step_raw)
 
     try:
         db.upsert_scenario(
