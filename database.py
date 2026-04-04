@@ -531,3 +531,14 @@ class Database:
                 """,
                 (rule_id, user_id),
             )
+
+    def deactivate_step_broadcast_rule(self, rule_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE step_broadcast_rules
+                SET is_active = 0
+                WHERE id = ?
+                """,
+                (rule_id,),
+            )

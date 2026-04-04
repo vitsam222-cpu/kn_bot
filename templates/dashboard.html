@@ -116,6 +116,10 @@
           data-photo-path="{{ r.photo_path or '' }}"
           onclick="editRule(this)"
         >Редактировать</button>
+        <form method="post" action="/broadcast/rule/delete" style="display:inline" onsubmit="return confirm('Удалить правило автодожима?')">
+          <input type="hidden" name="rule_id" value="{{ r.id }}" />
+          <button type="submit">Удалить</button>
+        </form>
       </td>
     </tr>
     {% endfor %}

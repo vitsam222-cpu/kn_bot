@@ -237,6 +237,14 @@ async def create_step_rule(
     return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
 
 
+@app.post("/broadcast/rule/delete")
+async def delete_step_rule(request: Request, rule_id: int = Form(...)):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    db.deactivate_step_broadcast_rule(rule_id)
+    return RedirectResponse(f"/dashboard?msg={quote_plus('Правило автодожима удалено')}", status_code=302)
+
+
 @app.on_event("startup")
 async def start_scheduler() -> None:
     async def scheduler_loop():
