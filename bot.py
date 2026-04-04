@@ -52,17 +52,22 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
 
 
 async def send_scenario_message(message: Message, scenario: dict) -> None:
-    db.increment_scenario_visit(int(scenario["id"]))
+    db.increment_scenario_visit(int(scenario["id"]), user_id=message.from_user.id)
     markup = build_keyboard(scenario.get("buttons_json"))
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():
         try:
-            await message.answer_photo(photo=FSInputFile(image_path), caption=scenario["bot_reply_text"], reply_markup=markup)
+            await message.answer_photo(
+                photo=FSInputFile(image_path),
+                caption=scenario["bot_reply_text"],
+                reply_markup=markup,
+                parse_mode="Markdown",
+            )
             return
         except Exception:
             # fallback to text if image sending fails
             pass
-    await message.answer(scenario["bot_reply_text"], reply_markup=markup)
+    await message.answer(scenario["bot_reply_text"], reply_markup=markup, parse_mode="Markdown")
 
 
 @dp.message(CommandStart())

@@ -83,6 +83,32 @@ class Database:
                     payload TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS user_step_visits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    scenario_id INTEGER NOT NULL,
+                    visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS step_broadcast_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scenario_ref TEXT NOT NULL,
+                    delay_days INTEGER NOT NULL DEFAULT 3,
+                    weekly_limit INTEGER NOT NULL DEFAULT 1,
+                    message_text TEXT NOT NULL,
+                    buttons_json TEXT,
+                    photo_path TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS step_broadcast_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             scenario_columns = {
@@ -340,7 +366,7 @@ class Database:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def increment_scenario_visit(self, scenario_id: int) -> None:
+    def increment_scenario_visit(self, scenario_id: int, user_id: int | None = None) -> None:
         with self.connect() as conn:
             conn.execute(
                 """
@@ -350,6 +376,14 @@ class Database:
                 """,
                 (scenario_id,),
             )
+            if user_id is not None:
+                conn.execute(
+                    """
+                    INSERT INTO user_step_visits(user_id, scenario_id)
+                    VALUES(?, ?)
+                    """,
+                    (user_id, scenario_id),
+                )
 
     def get_scenario_metrics(self) -> dict[int, int]:
         with self.connect() as conn:
@@ -378,3 +412,84 @@ class Database:
     def import_whitelist(self, user_ids: list[int]) -> None:
         with self.connect() as conn:
             conn.executemany("DELETE FROM blacklist WHERE user_id = ?", [(uid,) for uid in user_ids])
+
+    def create_step_broadcast_rule(
+        self,
+        scenario_ref: str,
+        delay_days: int,
+        weekly_limit: int,
+        message_text: str,
+        buttons_json: str | None = None,
+        photo_path: str | None = None,
+    ) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO step_broadcast_rules(
+                    scenario_ref, delay_days, weekly_limit, message_text, buttons_json, photo_path, is_active
+                )
+                VALUES(?, ?, ?, ?, ?, ?, 1)
+                """,
+                (scenario_ref.strip(), delay_days, weekly_limit, message_text, buttons_json, photo_path),
+            )
+            return int(cur.lastrowid)
+
+    def get_step_broadcast_rules(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM step_broadcast_rules
+                WHERE is_active = 1
+                ORDER BY id DESC
+                """
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_users_due_for_step_rule(
+        self, rule_id: int, scenario_id: int, delay_days: int, weekly_limit: int
+    ) -> list[int]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH latest_visit AS (
+                    SELECT user_id, MAX(visited_at) AS last_visit
+                    FROM user_step_visits
+                    WHERE scenario_id = ?
+                    GROUP BY user_id
+                )
+                SELECT lv.user_id
+                FROM latest_visit lv
+                WHERE lv.user_id NOT IN (SELECT user_id FROM blacklist)
+                  AND datetime(lv.last_visit) <= datetime('now', ?)
+                  AND (
+                      SELECT COUNT(*)
+                      FROM step_broadcast_log sbl
+                      WHERE sbl.rule_id = ? AND sbl.user_id = lv.user_id
+                        AND datetime(sbl.sent_at) >= datetime('now', '-7 day')
+                  ) < ?
+                  AND (
+                      (
+                          SELECT MAX(sbl2.sent_at)
+                          FROM step_broadcast_log sbl2
+                          WHERE sbl2.rule_id = ? AND sbl2.user_id = lv.user_id
+                      ) IS NULL
+                      OR datetime((
+                          SELECT MAX(sbl3.sent_at)
+                          FROM step_broadcast_log sbl3
+                          WHERE sbl3.rule_id = ? AND sbl3.user_id = lv.user_id
+                      )) < datetime(lv.last_visit)
+                  )
+                """,
+                (scenario_id, f"-{max(delay_days, 0)} day", rule_id, max(weekly_limit, 1), rule_id, rule_id),
+            ).fetchall()
+        return [int(r["user_id"]) for r in rows]
+
+    def log_step_rule_delivery(self, rule_id: int, user_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO step_broadcast_log(rule_id, user_id)
+                VALUES(?, ?)
+                """,
+                (rule_id, user_id),
+            )

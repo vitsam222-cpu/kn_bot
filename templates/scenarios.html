@@ -17,7 +17,7 @@
   <form id="scenario-form" method="post" action="/scenarios/save" enctype="multipart/form-data" onsubmit="return onScenarioSubmit(event)">
     <input id="scenario-id-input" type="text" name="scenario_id" placeholder="ID или триггер (для редактирования)" />
     <input type="text" name="trigger_text" placeholder="Триггер" required />
-    <textarea name="bot_reply_text" placeholder="Ответ бота" required></textarea>
+    <textarea name="bot_reply_text" placeholder="Ответ бота (поддерживается Markdown)" required></textarea>
     <label>Изображение шага: <input type="file" name="scenario_image" accept="image/*" /></label>
     <input type="hidden" name="existing_image_path" id="existing-image-path" />
     <small id="existing-image-label"></small>

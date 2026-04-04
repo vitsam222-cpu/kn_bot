@@ -87,11 +87,20 @@ async def dashboard(request: Request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
     history = db.get_broadcast_history()
+    drip_rules = db.get_step_broadcast_rules()
+    scenarios = db.get_all_scenarios()
     flash_msg = request.query_params.get("msg")
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={**stats, "broadcast_history": history, "timezone_options": TIMEZONE_OPTIONS, "flash_msg": flash_msg},
+        context={
+            **stats,
+            "broadcast_history": history,
+            "timezone_options": TIMEZONE_OPTIONS,
+            "flash_msg": flash_msg,
+            "drip_rules": drip_rules,
+            "scenarios": scenarios,
+        },
     )
 
 
@@ -114,13 +123,14 @@ async def send_broadcast(
                     data = aiohttp.FormData()
                     data.add_field("chat_id", str(user_id))
                     data.add_field("caption", text)
+                    data.add_field("parse_mode", "Markdown")
                     data.add_field("photo", image_payload, filename="broadcast.jpg", content_type="image/jpeg")
                     if markup:
                         data.add_field("reply_markup", json.dumps(markup, ensure_ascii=False))
                     async with session.post(f"{api_url}/sendPhoto", data=data) as resp:
                         ok = resp.status == 200 and (await resp.json()).get("ok")
                 else:
-                    payload = {"chat_id": user_id, "text": text}
+                    payload = {"chat_id": user_id, "text": text, "parse_mode": "Markdown"}
                     if markup:
                         payload["reply_markup"] = markup
                     async with session.post(f"{api_url}/sendMessage", json=payload) as resp:
@@ -190,6 +200,39 @@ async def broadcast(
     return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
 
 
+@app.post("/broadcast/rule")
+async def create_step_rule(
+    request: Request,
+    scenario_ref: str = Form(...),
+    delay_days: int = Form(3),
+    weekly_limit: int = Form(1),
+    text: str = Form(...),
+    buttons_json: str = Form(""),
+    photo: UploadFile | None = File(None),
+):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+
+    image_data = await photo.read() if photo and photo.filename else None
+    photo_path = None
+    if image_data:
+        ext = Path(photo.filename or "").suffix or ".jpg"
+        filename = f"{uuid4().hex}{ext}"
+        saved = BROADCAST_UPLOAD_DIR / filename
+        saved.write_bytes(image_data)
+        photo_path = str(saved.resolve())
+
+    db.create_step_broadcast_rule(
+        scenario_ref=scenario_ref,
+        delay_days=max(delay_days, 0),
+        weekly_limit=max(weekly_limit, 1),
+        message_text=text.strip(),
+        buttons_json=buttons_json.strip() or None,
+        photo_path=photo_path,
+    )
+    return RedirectResponse(f"/dashboard?msg={quote_plus('Правило автодожима сохранено')}", status_code=302)
+
+
 @app.on_event("startup")
 async def start_scheduler() -> None:
     async def scheduler_loop():
@@ -209,6 +252,28 @@ async def start_scheduler() -> None:
                     db.update_broadcast_status(
                         item["id"], "done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
                     )
+
+                rules = db.get_step_broadcast_rules()
+                for rule in rules:
+                    scenario_id = db.resolve_scenario_ref(str(rule.get("scenario_ref", "")).strip())
+                    if not scenario_id:
+                        continue
+                    due_user_ids = db.get_users_due_for_step_rule(
+                        rule_id=int(rule["id"]),
+                        scenario_id=scenario_id,
+                        delay_days=int(rule.get("delay_days") or 0),
+                        weekly_limit=int(rule.get("weekly_limit") or 1),
+                    )
+                    for user_id in due_user_ids:
+                        result = await send_broadcast(
+                            text=rule["message_text"],
+                            user_ids=[user_id],
+                            buttons_json=rule.get("buttons_json"),
+                            photo=None,
+                            photo_path=rule.get("photo_path"),
+                        )
+                        if result["sent"] > 0:
+                            db.log_step_rule_delivery(int(rule["id"]), int(user_id))
             except Exception as exc:
                 # keep background loop alive
                 print(f"Broadcast scheduler error: {exc}")
