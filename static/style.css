@@ -10,3 +10,6 @@ table { width: 100%; border-collapse: collapse; background: white; }
 th, td { border: 1px solid #e6e6f0; padding: 8px; vertical-align: top; text-align: left; }
 .error { color: #d10000; }
 code { white-space: pre-wrap; }
+
+.button-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-bottom: 8px; }
+.button-row-actions { margin-bottom: 10px; }
