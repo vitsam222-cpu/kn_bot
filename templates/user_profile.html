@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Профиль пользователя {{ user.user_id }}</h1>
+<div class="card">
+  <p><strong>Username:</strong> @{{ user.username or '-' }}</p>
+  <p><strong>Создан:</strong> {{ user.created_at }}</p>
+  <p><strong>Последний контакт:</strong> {{ user.last_seen_at or '-' }}</p>
+  <p><strong>Статус:</strong> {{ 'Забанен' if user.is_banned else 'Активен' }}</p>
+</div>
+
+<div class="card">
+  <h2>История действий/сообщений</h2>
+  <table>
+    <tr><th>Дата</th><th>Событие</th><th>Payload</th></tr>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.created_at }}</td>
+      <td>{{ e.event_type }}</td>
+      <td><code>{{ e.payload or '-' }}</code></td>
+    </tr>
+    {% endfor %}
+    {% if not events %}
+    <tr><td colspan="3">Нет событий</td></tr>
+    {% endif %}
+  </table>
+</div>
+<a class="btn" href="/users">← Назад к пользователям</a>
+{% endblock %}
