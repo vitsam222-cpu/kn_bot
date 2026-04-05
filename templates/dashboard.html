@@ -96,7 +96,7 @@
 <div class="card">
   <h2>Правила автодожима</h2>
   <table>
-    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th><th></th></tr>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
     {% for r in drip_rules %}
     <tr>
       <td>{{ r.id }}</td>
@@ -104,6 +104,18 @@
       <td>{{ r.delay_days }}</td>
       <td>{{ r.weekly_limit }}</td>
       <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
+      <td>
+        <strong>{{ r.due_count }}</strong>
+        {% if r.due_users %}
+          <div>
+            {% for u in r.due_users %}
+              <span class="chip">{{ u.user_id }}{% if u.username %} (@{{ u.username }}){% endif %}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="muted">Нет пользователей</div>
+        {% endif %}
+      </td>
       <td>
         <button
           type="button"

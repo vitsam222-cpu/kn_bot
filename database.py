@@ -522,6 +522,56 @@ class Database:
             ).fetchall()
         return [int(r["user_id"]) for r in rows]
 
+    def get_due_users_for_step_rule_detailed(
+        self, rule_id: int, scenario_id: int, delay_days: int, weekly_limit: int, limit: int = 30
+    ) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH latest_visit AS (
+                    SELECT user_id, MAX(visited_at) AS last_visit
+                    FROM user_step_visits
+                    WHERE scenario_id = ?
+                    GROUP BY user_id
+                )
+                SELECT lv.user_id, u.username, lv.last_visit
+                FROM latest_visit lv
+                JOIN users u ON u.user_id = lv.user_id
+                WHERE lv.user_id NOT IN (SELECT user_id FROM blacklist)
+                  AND datetime(lv.last_visit) <= datetime('now', ?)
+                  AND (
+                      SELECT COUNT(*)
+                      FROM step_broadcast_log sbl
+                      WHERE sbl.rule_id = ? AND sbl.user_id = lv.user_id
+                        AND datetime(sbl.sent_at) >= datetime('now', '-7 day')
+                  ) < ?
+                  AND (
+                      (
+                          SELECT MAX(sbl2.sent_at)
+                          FROM step_broadcast_log sbl2
+                          WHERE sbl2.rule_id = ? AND sbl2.user_id = lv.user_id
+                      ) IS NULL
+                      OR datetime((
+                          SELECT MAX(sbl3.sent_at)
+                          FROM step_broadcast_log sbl3
+                          WHERE sbl3.rule_id = ? AND sbl3.user_id = lv.user_id
+                      )) < datetime(lv.last_visit)
+                  )
+                ORDER BY datetime(lv.last_visit) ASC
+                LIMIT ?
+                """,
+                (
+                    scenario_id,
+                    f"-{max(delay_days, 0)} day",
+                    rule_id,
+                    max(weekly_limit, 1),
+                    rule_id,
+                    rule_id,
+                    max(limit, 1),
+                ),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def log_step_rule_delivery(self, rule_id: int, user_id: int) -> None:
         with self.connect() as conn:
             conn.execute(

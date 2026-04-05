@@ -111,7 +111,24 @@ async def dashboard(request: Request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
     history = db.get_broadcast_history()
-    drip_rules = db.get_step_broadcast_rules()
+    raw_drip_rules = db.get_step_broadcast_rules()
+    drip_rules: list[dict[str, Any]] = []
+    for rule in raw_drip_rules:
+        scenario_id = db.resolve_scenario_ref(str(rule.get("scenario_ref", "")).strip())
+        if scenario_id:
+            due_users = db.get_due_users_for_step_rule_detailed(
+                rule_id=int(rule["id"]),
+                scenario_id=scenario_id,
+                delay_days=int(rule.get("delay_days") or 0),
+                weekly_limit=int(rule.get("weekly_limit") or 1),
+                limit=30,
+            )
+        else:
+            due_users = []
+        rule_view = dict(rule)
+        rule_view["due_users"] = due_users
+        rule_view["due_count"] = len(due_users)
+        drip_rules.append(rule_view)
     scenarios = db.get_all_scenarios()
     flash_msg = request.query_params.get("msg")
     return templates.TemplateResponse(
