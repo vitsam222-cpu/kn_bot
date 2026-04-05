@@ -111,11 +111,11 @@ async def dashboard(request: Request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
     history = db.get_broadcast_history()
-    raw_drip_rules = db.get_step_broadcast_rules()
+    raw_drip_rules = db.get_step_broadcast_rules(active_only=False)
     drip_rules: list[dict[str, Any]] = []
     for rule in raw_drip_rules:
         scenario_id = db.resolve_scenario_ref(str(rule.get("scenario_ref", "")).strip())
-        if scenario_id:
+        if scenario_id and int(rule.get("is_active") or 0) == 1:
             due_users = db.get_due_users_for_step_rule_detailed(
                 rule_id=int(rule["id"]),
                 scenario_id=scenario_id,
@@ -123,13 +123,19 @@ async def dashboard(request: Request):
                 weekly_limit=int(rule.get("weekly_limit") or 1),
                 limit=30,
             )
+            next_trigger_at = db.get_rule_next_trigger_at(
+                scenario_id=scenario_id, delay_days=int(rule.get("delay_days") or 0)
+            )
         else:
             due_users = []
+            next_trigger_at = None
         rule_view = dict(rule)
         rule_view["due_users"] = due_users
         rule_view["due_count"] = len(due_users)
+        rule_view["next_trigger_at"] = next_trigger_at
         drip_rules.append(rule_view)
     scenarios = db.get_all_scenarios()
+    all_tags = db.get_all_tags()
     flash_msg = request.query_params.get("msg")
     return templates.TemplateResponse(
         request=request,
@@ -141,12 +147,19 @@ async def dashboard(request: Request):
             "flash_msg": flash_msg,
             "drip_rules": drip_rules,
             "scenarios": scenarios,
+            "all_tags": all_tags,
         },
     )
 
 
 async def send_broadcast(
-    text: str, user_ids: list[int], buttons_json: str | None, photo: bytes | None, photo_path: str | None = None
+    text: str,
+    user_ids: list[int],
+    buttons_json: str | None,
+    photo: bytes | None,
+    photo_path: str | None = None,
+    broadcast_id: int | None = None,
+    rule_id: int | None = None,
 ) -> dict[str, int]:
     sent, failed = 0, 0
     markup: dict[str, Any] | None = None
@@ -178,10 +191,34 @@ async def send_broadcast(
                         ok = resp.status == 200 and (await resp.json()).get("ok")
                 if ok:
                     sent += 1
+                    db.log_broadcast_delivery(
+                        user_id=user_id,
+                        status="sent",
+                        message_text=text,
+                        broadcast_id=broadcast_id,
+                        rule_id=rule_id,
+                        error_text=None,
+                    )
                 else:
                     failed += 1
+                    db.log_broadcast_delivery(
+                        user_id=user_id,
+                        status="failed",
+                        message_text=text,
+                        broadcast_id=broadcast_id,
+                        rule_id=rule_id,
+                        error_text="Telegram API response not ok",
+                    )
             except Exception:
                 failed += 1
+                db.log_broadcast_delivery(
+                    user_id=user_id,
+                    status="failed",
+                    message_text=text,
+                    broadcast_id=broadcast_id,
+                    rule_id=rule_id,
+                    error_text="Exception during send",
+                )
 
     return {"sent": sent, "failed": failed}
 
@@ -194,6 +231,9 @@ async def broadcast(
     photo: UploadFile | None = File(None),
     scheduled_at: str = Form(""),
     timezone: str = Form("UTC"),
+    segment_type: str = Form("all"),
+    segment_value: str = Form(""),
+    segment_step_ref: str = Form(""),
 ):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
@@ -225,7 +265,11 @@ async def broadcast(
         )
         msg = "Рассылка запланирована"
     else:
-        user_ids = db.get_active_user_ids()
+        user_ids = db.get_segment_user_ids(
+            segment_type=segment_type,
+            segment_value=segment_value.strip() or None,
+            scenario_ref=segment_step_ref.strip() or None,
+        )
         broadcast_id = db.log_broadcast(
             message_text=text,
             buttons_json=buttons_json or None,
@@ -234,7 +278,14 @@ async def broadcast(
             scheduled_at=None,
             status="running",
         )
-        result = await send_broadcast(text, user_ids, buttons_json or None, image_data, photo_path=photo_path)
+        result = await send_broadcast(
+            text,
+            user_ids,
+            buttons_json or None,
+            image_data,
+            photo_path=photo_path,
+            broadcast_id=broadcast_id,
+        )
         db.update_broadcast_status(
             broadcast_id, status="done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
         )
@@ -287,6 +338,15 @@ async def delete_step_rule(request: Request, rule_id: int = Form(...)):
     return RedirectResponse(f"/dashboard?msg={quote_plus('Правило автодожима удалено')}", status_code=302)
 
 
+@app.post("/broadcast/rule/toggle")
+async def toggle_step_rule(request: Request, rule_id: int = Form(...), is_active: int = Form(...)):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    db.set_step_broadcast_rule_active(rule_id, bool(is_active))
+    msg = "Правило включено" if is_active else "Правило поставлено на паузу"
+    return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
+
+
 @app.on_event("startup")
 async def start_scheduler() -> None:
     async def scheduler_loop():
@@ -325,6 +385,7 @@ async def start_scheduler() -> None:
                             buttons_json=rule.get("buttons_json"),
                             photo=None,
                             photo_path=rule.get("photo_path"),
+                            rule_id=int(rule["id"]),
                         )
                         if result["sent"] > 0:
                             db.log_step_rule_delivery(int(rule["id"]), int(user_id))
@@ -467,9 +528,25 @@ async def delete_scenario(request: Request, scenario_id: int = Form(...)):
 async def users_page(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
-    users = db.get_users_with_status()
+    filter_tag = request.query_params.get("tag") or None
+    filter_activity = request.query_params.get("activity") or None
+    step_ref = request.query_params.get("step_ref") or None
+    scenario_id = db.resolve_scenario_ref(step_ref) if step_ref else None
+    users = db.get_users_filtered(tag=filter_tag, activity=filter_activity, scenario_id=scenario_id)
     stats = db.get_stats()
-    return templates.TemplateResponse(request=request, name="users.html", context={"users": users, **stats})
+    return templates.TemplateResponse(
+        request=request,
+        name="users.html",
+        context={
+            "users": users,
+            **stats,
+            "all_tags": db.get_all_tags(),
+            "scenarios": db.get_all_scenarios(),
+            "filter_tag": filter_tag or "",
+            "filter_activity": filter_activity or "",
+            "filter_step_ref": step_ref or "",
+        },
+    )
 
 
 @app.post("/users/toggle-ban")
@@ -489,11 +566,26 @@ async def user_profile(request: Request, user_id: int):
     if not users:
         return RedirectResponse("/users", status_code=302)
     events = db.get_user_events(user_id)
+    visits = db.get_user_step_visits(user_id)
+    deliveries = db.get_user_delivery_logs(user_id)
     return templates.TemplateResponse(
         request=request,
         name="user_profile.html",
-        context={"user": users[0], "events": events},
+        context={"user": users[0], "events": events, "visits": visits, "deliveries": deliveries, "tags": db.get_user_tags(user_id)},
     )
+
+
+@app.post("/users/tag")
+async def tag_user(request: Request, user_id: int = Form(...), tag: str = Form(...), action: str = Form("add")):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    normalized = tag.strip()
+    if normalized:
+        if action == "remove":
+            db.remove_user_tag(user_id, normalized)
+        else:
+            db.add_user_tag(user_id, normalized)
+    return RedirectResponse("/users", status_code=302)
 
 
 @app.post("/users/import-list")
@@ -520,7 +612,11 @@ async def export_users(request: Request):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
 
-    users = db.get_users_with_status()
+    filter_tag = request.query_params.get("tag") or None
+    filter_activity = request.query_params.get("activity") or None
+    step_ref = request.query_params.get("step_ref") or None
+    scenario_id = db.resolve_scenario_ref(step_ref) if step_ref else None
+    users = db.get_users_filtered(tag=filter_tag, activity=filter_activity, scenario_id=scenario_id)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["user_id", "username", "created_at", "status"])

@@ -33,6 +33,17 @@
         {% endfor %}
       </select>
     </label>
+    <label>Сегмент:
+      <select name="segment_type">
+        <option value="all">Все активные</option>
+        <option value="dau">DAU (24ч)</option>
+        <option value="wau">WAU (7д)</option>
+        <option value="tag">По тегу</option>
+        <option value="step">По шагу</option>
+      </select>
+    </label>
+    <input type="text" name="segment_value" placeholder="Тег (для сегмента tag)" />
+    <input type="text" name="segment_step_ref" placeholder="Шаг ID/тег (для сегмента step)" />
 
     <button type="button" onclick="showPreview()">Превью</button>
 
@@ -96,13 +107,15 @@
 <div class="card">
   <h2>Правила автодожима</h2>
   <table>
-    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Статус</th><th>След. срабатывание</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
     {% for r in drip_rules %}
     <tr>
       <td>{{ r.id }}</td>
       <td>{{ r.scenario_ref }}</td>
       <td>{{ r.delay_days }}</td>
       <td>{{ r.weekly_limit }}</td>
+      <td>{{ "Активно" if r.is_active else "Пауза" }}</td>
+      <td>{{ r.next_trigger_at or "-" }}</td>
       <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
       <td>
         <strong>{{ r.due_count }}</strong>
@@ -131,6 +144,11 @@
         <form method="post" action="/broadcast/rule/delete" style="display:inline" onsubmit="return confirm('Удалить правило автодожима?')">
           <input type="hidden" name="rule_id" value="{{ r.id }}" />
           <button type="submit">Удалить</button>
+        </form>
+        <form method="post" action="/broadcast/rule/toggle" style="display:inline">
+          <input type="hidden" name="rule_id" value="{{ r.id }}" />
+          <input type="hidden" name="is_active" value="{{ 0 if r.is_active else 1 }}" />
+          <button type="submit">{{ "Пауза" if r.is_active else "Возобновить" }}</button>
         </form>
       </td>
     </tr>

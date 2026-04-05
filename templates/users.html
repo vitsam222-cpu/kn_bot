@@ -5,7 +5,36 @@
   <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
   <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
 </div>
-<a class="btn" href="/users/export">Скачать CSV</a>
+<form method="get" action="/users" class="card">
+  <h3>Фильтры пользователей</h3>
+  <label>Тег:
+    <input type="text" name="tag" value="{{ filter_tag }}" list="tags-list" placeholder="например, vip" />
+    <datalist id="tags-list">
+      {% for t in all_tags %}
+      <option value="{{ t }}"></option>
+      {% endfor %}
+    </datalist>
+  </label>
+  <label>Активность:
+    <select name="activity">
+      <option value="" {% if not filter_activity %}selected{% endif %}>Любая</option>
+      <option value="dau" {% if filter_activity == "dau" %}selected{% endif %}>DAU (24ч)</option>
+      <option value="wau" {% if filter_activity == "wau" %}selected{% endif %}>WAU (7д)</option>
+    </select>
+  </label>
+  <label>Посетил шаг (ID/тег):
+    <input type="text" name="step_ref" value="{{ filter_step_ref }}" list="steps-list" />
+    <datalist id="steps-list">
+      {% for sc in scenarios %}
+      <option value="{{ sc.id }}">{{ sc.trigger_text }}</option>
+      <option value="{{ sc.trigger_text }}">{{ sc.id }}</option>
+      {% endfor %}
+    </datalist>
+  </label>
+  <button type="submit">Применить</button>
+</form>
+
+<a class="btn" href="/users/export?tag={{ filter_tag }}&activity={{ filter_activity }}&step_ref={{ filter_step_ref }}">Скачать CSV (по фильтрам)</a>
 <div class="card">
   <h3>Импорт whitelist/blacklist</h3>
   <form method="post" action="/users/import-list" enctype="multipart/form-data">
@@ -27,6 +56,12 @@
     <td>{{ u.last_seen_at or "-" }}</td>
     <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
     <td>
+      <form method="post" action="/users/tag">
+        <input type="hidden" name="user_id" value="{{ u.user_id }}" />
+        <input type="text" name="tag" placeholder="тег" />
+        <input type="hidden" name="action" value="add" />
+        <button type="submit">+Тег</button>
+      </form>
       <form method="post" action="/users/toggle-ban">
         <input type="hidden" name="user_id" value="{{ u.user_id }}" />
         <input type="hidden" name="banned" value="{{ 0 if u.is_banned else 1 }}" />

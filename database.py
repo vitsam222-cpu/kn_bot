@@ -109,6 +109,23 @@ class Database:
                     user_id INTEGER NOT NULL,
                     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS user_tags (
+                    user_id INTEGER NOT NULL,
+                    tag TEXT NOT NULL,
+                    PRIMARY KEY(user_id, tag)
+                );
+
+                CREATE TABLE IF NOT EXISTS broadcast_delivery_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    broadcast_id INTEGER,
+                    rule_id INTEGER,
+                    user_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    error_text TEXT,
+                    message_text TEXT,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             scenario_columns = {
@@ -292,6 +309,32 @@ class Database:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_users_filtered(
+        self, tag: str | None = None, activity: str | None = None, scenario_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT u.user_id, u.username, u.created_at, u.last_seen_at,
+                   CASE WHEN b.user_id IS NULL THEN 0 ELSE 1 END AS is_banned
+            FROM users u
+            LEFT JOIN blacklist b ON u.user_id = b.user_id
+            WHERE 1=1
+        """
+        params: list[Any] = []
+        if tag:
+            sql += " AND EXISTS (SELECT 1 FROM user_tags ut WHERE ut.user_id = u.user_id AND ut.tag = ?)"
+            params.append(tag)
+        if activity == "dau":
+            sql += " AND datetime(u.last_seen_at) >= datetime('now', '-1 day')"
+        elif activity == "wau":
+            sql += " AND datetime(u.last_seen_at) >= datetime('now', '-7 day')"
+        if scenario_id:
+            sql += " AND EXISTS (SELECT 1 FROM user_step_visits sv WHERE sv.user_id = u.user_id AND sv.scenario_id = ?)"
+            params.append(scenario_id)
+        sql += " ORDER BY u.created_at DESC"
+        with self.connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_stats(self) -> dict[str, int]:
         with self.connect() as conn:
             users_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -313,6 +356,61 @@ class Database:
                 """
             ).fetchall()
         return [int(r[0]) for r in rows]
+
+    def get_segment_user_ids(
+        self, segment_type: str = "all", segment_value: str | None = None, scenario_ref: str | None = None
+    ) -> list[int]:
+        if segment_type == "all":
+            return self.get_active_user_ids()
+        if segment_type == "dau":
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT user_id FROM users
+                    WHERE user_id NOT IN (SELECT user_id FROM blacklist)
+                      AND datetime(last_seen_at) >= datetime('now', '-1 day')
+                    """
+                ).fetchall()
+            return [int(r[0]) for r in rows]
+        if segment_type == "wau":
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT user_id FROM users
+                    WHERE user_id NOT IN (SELECT user_id FROM blacklist)
+                      AND datetime(last_seen_at) >= datetime('now', '-7 day')
+                    """
+                ).fetchall()
+            return [int(r[0]) for r in rows]
+        if segment_type == "tag" and segment_value:
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT u.user_id
+                    FROM users u
+                    JOIN user_tags ut ON ut.user_id = u.user_id
+                    WHERE ut.tag = ?
+                      AND u.user_id NOT IN (SELECT user_id FROM blacklist)
+                    """,
+                    (segment_value.strip(),),
+                ).fetchall()
+            return [int(r[0]) for r in rows]
+        if segment_type == "step" and scenario_ref:
+            scenario_id = self.resolve_scenario_ref(scenario_ref)
+            if not scenario_id:
+                return []
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT sv.user_id
+                    FROM user_step_visits sv
+                    WHERE sv.scenario_id = ?
+                      AND sv.user_id NOT IN (SELECT user_id FROM blacklist)
+                    """,
+                    (scenario_id,),
+                ).fetchall()
+            return [int(r[0]) for r in rows]
+        return self.get_active_user_ids()
 
     def log_broadcast(
         self,
@@ -413,6 +511,73 @@ class Database:
         with self.connect() as conn:
             conn.executemany("DELETE FROM blacklist WHERE user_id = ?", [(uid,) for uid in user_ids])
 
+    def add_user_tag(self, user_id: int, tag: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_tags(user_id, tag) VALUES(?, ?)",
+                (user_id, tag.strip()),
+            )
+
+    def remove_user_tag(self, user_id: int, tag: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM user_tags WHERE user_id = ? AND tag = ?", (user_id, tag.strip()))
+
+    def get_user_tags(self, user_id: int) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT tag FROM user_tags WHERE user_id = ? ORDER BY tag", (user_id,)).fetchall()
+        return [str(r["tag"]) for r in rows]
+
+    def get_all_tags(self) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT DISTINCT tag FROM user_tags ORDER BY tag").fetchall()
+        return [str(r["tag"]) for r in rows]
+
+    def log_broadcast_delivery(
+        self,
+        user_id: int,
+        status: str,
+        message_text: str,
+        broadcast_id: int | None = None,
+        rule_id: int | None = None,
+        error_text: str | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO broadcast_delivery_log(broadcast_id, rule_id, user_id, status, error_text, message_text)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (broadcast_id, rule_id, user_id, status, error_text, message_text),
+            )
+
+    def get_user_delivery_logs(self, user_id: int, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM broadcast_delivery_log
+                WHERE user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_user_step_visits(self, user_id: int, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT sv.user_id, sv.scenario_id, sv.visited_at, s.trigger_text
+                FROM user_step_visits sv
+                LEFT JOIN scenarios s ON s.id = sv.scenario_id
+                WHERE sv.user_id = ?
+                ORDER BY sv.id DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def create_step_broadcast_rule(
         self,
         scenario_ref: str,
@@ -472,15 +637,20 @@ class Database:
             photo_path=photo_path,
         )
 
-    def get_step_broadcast_rules(self) -> list[dict[str, Any]]:
+    def get_step_broadcast_rules(self, active_only: bool = True) -> list[dict[str, Any]]:
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM step_broadcast_rules
-                WHERE is_active = 1
-                ORDER BY id DESC
-                """
-            ).fetchall()
+            if active_only:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM step_broadcast_rules
+                    WHERE is_active = 1
+                    ORDER BY id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM step_broadcast_rules ORDER BY id DESC"
+                ).fetchall()
         return [dict(r) for r in rows]
 
     def get_users_due_for_step_rule(
@@ -592,3 +762,28 @@ class Database:
                 """,
                 (rule_id,),
             )
+
+    def set_step_broadcast_rule_active(self, rule_id: int, is_active: bool) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE step_broadcast_rules SET is_active = ? WHERE id = ?",
+                (1 if is_active else 0, rule_id),
+            )
+
+    def get_rule_next_trigger_at(self, scenario_id: int, delay_days: int) -> str | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                WITH latest_visit AS (
+                    SELECT user_id, MAX(visited_at) AS last_visit
+                    FROM user_step_visits
+                    WHERE scenario_id = ?
+                    GROUP BY user_id
+                )
+                SELECT MIN(datetime(last_visit, ?)) AS next_trigger
+                FROM latest_visit
+                WHERE datetime(last_visit, ?) > datetime('now')
+                """,
+                (scenario_id, f"+{max(delay_days, 0)} day", f"-{max(delay_days, 0)} day"),
+            ).fetchone()
+        return str(row["next_trigger"]) if row and row["next_trigger"] else None
