@@ -93,6 +93,7 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS step_broadcast_rules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    segment_name TEXT,
                     scenario_ref TEXT NOT NULL,
                     delay_days INTEGER NOT NULL DEFAULT 3,
                     weekly_limit INTEGER NOT NULL DEFAULT 1,
@@ -184,6 +185,8 @@ class Database:
                 conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN send_time TEXT NOT NULL DEFAULT '10:00'")
             if "required_tag" not in rule_columns:
                 conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN required_tag TEXT")
+            if "segment_name" not in rule_columns:
+                conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN segment_name TEXT")
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -576,6 +579,25 @@ class Database:
             rows = conn.execute("SELECT DISTINCT tag FROM user_tags ORDER BY tag").fetchall()
         return [str(r["tag"]) for r in rows]
 
+    def get_tags_for_users(self, user_ids: list[int]) -> dict[int, list[str]]:
+        if not user_ids:
+            return {}
+        placeholders = ",".join("?" for _ in user_ids)
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT user_id, tag
+                FROM user_tags
+                WHERE user_id IN ({placeholders})
+                ORDER BY tag
+                """,
+                tuple(user_ids),
+            ).fetchall()
+        tags_map: dict[int, list[str]] = {uid: [] for uid in user_ids}
+        for row in rows:
+            tags_map[int(row["user_id"])].append(str(row["tag"]))
+        return tags_map
+
     def log_broadcast_delivery(
         self,
         user_id: int,
@@ -624,6 +646,7 @@ class Database:
 
     def create_step_broadcast_rule(
         self,
+        segment_name: str | None,
         scenario_ref: str,
         delay_days: int,
         weekly_limit: int,
@@ -637,16 +660,27 @@ class Database:
             cur = conn.execute(
                 """
                 INSERT INTO step_broadcast_rules(
-                    scenario_ref, delay_days, weekly_limit, send_time, required_tag, message_text, buttons_json, photo_path, is_active
+                    segment_name, scenario_ref, delay_days, weekly_limit, send_time, required_tag, message_text, buttons_json, photo_path, is_active
                 )
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 """,
-                (scenario_ref.strip(), delay_days, weekly_limit, send_time, required_tag, message_text, buttons_json, photo_path),
+                (
+                    segment_name.strip() if segment_name else None,
+                    scenario_ref.strip(),
+                    delay_days,
+                    weekly_limit,
+                    send_time,
+                    required_tag,
+                    message_text,
+                    buttons_json,
+                    photo_path,
+                ),
             )
             return int(cur.lastrowid)
 
     def upsert_step_broadcast_rule(
         self,
+        segment_name: str | None,
         scenario_ref: str,
         delay_days: int,
         weekly_limit: int,
@@ -662,10 +696,11 @@ class Database:
                 conn.execute(
                     """
                     UPDATE step_broadcast_rules
-                    SET scenario_ref=?, delay_days=?, weekly_limit=?, send_time=?, required_tag=?, message_text=?, buttons_json=?, photo_path=?
+                    SET segment_name=?, scenario_ref=?, delay_days=?, weekly_limit=?, send_time=?, required_tag=?, message_text=?, buttons_json=?, photo_path=?
                     WHERE id=?
                     """,
                     (
+                        segment_name.strip() if segment_name else None,
                         scenario_ref.strip(),
                         delay_days,
                         weekly_limit,
@@ -679,6 +714,7 @@ class Database:
                 )
             return int(rule_id)
         return self.create_step_broadcast_rule(
+            segment_name=segment_name,
             scenario_ref=scenario_ref,
             delay_days=delay_days,
             weekly_limit=weekly_limit,

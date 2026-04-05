@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from config import settings
 from database import Database
+from formatting import markdown_to_html
 
 app = FastAPI(title="Кадровый Навигатор Admin")
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
@@ -184,15 +185,15 @@ async def send_broadcast(
                 if image_payload:
                     data = aiohttp.FormData()
                     data.add_field("chat_id", str(user_id))
-                    data.add_field("caption", text)
-                    data.add_field("parse_mode", "Markdown")
+                    data.add_field("caption", markdown_to_html(text))
+                    data.add_field("parse_mode", "HTML")
                     data.add_field("photo", image_payload, filename="broadcast.jpg", content_type="image/jpeg")
                     if markup:
                         data.add_field("reply_markup", json.dumps(markup, ensure_ascii=False))
                     async with session.post(f"{api_url}/sendPhoto", data=data) as resp:
                         ok = resp.status == 200 and (await resp.json()).get("ok")
                 else:
-                    payload = {"chat_id": user_id, "text": text, "parse_mode": "Markdown"}
+                    payload = {"chat_id": user_id, "text": markdown_to_html(text), "parse_mode": "HTML"}
                     if markup:
                         payload["reply_markup"] = markup
                     async with session.post(f"{api_url}/sendMessage", json=payload) as resp:
@@ -305,6 +306,7 @@ async def broadcast(
 async def create_step_rule(
     request: Request,
     rule_id: int | None = Form(None),
+    segment_name: str = Form(""),
     scenario_ref: str = Form(...),
     delay_days: int = Form(3),
     weekly_limit: int = Form(1),
@@ -328,6 +330,7 @@ async def create_step_rule(
         photo_path = str(saved.resolve())
 
     db.upsert_step_broadcast_rule(
+        segment_name=segment_name.strip() or None,
         scenario_ref=scenario_ref,
         delay_days=max(delay_days, 0),
         weekly_limit=max(weekly_limit, 1),
@@ -571,7 +574,11 @@ async def users_page(request: Request):
     step_ref = request.query_params.get("step_ref") or None
     scenario_id = db.resolve_scenario_ref(step_ref) if step_ref else None
     users = db.get_users_filtered(tag=filter_tag, activity=filter_activity, scenario_id=scenario_id)
+    tags_map = db.get_tags_for_users([int(u["user_id"]) for u in users])
+    for user in users:
+        user["tags"] = tags_map.get(int(user["user_id"]), [])
     stats = db.get_stats()
+    segments = db.get_step_broadcast_rules(active_only=False)
     return render_template(
         request=request,
         name="users.html",
@@ -584,6 +591,7 @@ async def users_page(request: Request):
             "filter_activity": filter_activity or "",
             "filter_step_ref": step_ref or "",
             "flash_msg": request.query_params.get("msg"),
+            "segments": segments,
         },
     )
 
@@ -633,6 +641,35 @@ async def tag_user(request: Request, user_id: int = Form(...), tag: str = Form(.
         else:
             db.add_user_tag(user_id, normalized)
     return RedirectResponse("/users", status_code=302)
+
+
+@app.post("/users/segment/save")
+async def save_user_segment(
+    request: Request,
+    segment_id: int | None = Form(None),
+    segment_name: str = Form(""),
+    step_ref: str = Form(...),
+    delay_days: int = Form(3),
+    weekly_limit: int = Form(1),
+    send_time: str = Form("10:00"),
+    text: str = Form(...),
+):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    db.upsert_step_broadcast_rule(
+        rule_id=segment_id,
+        segment_name=segment_name.strip() or None,
+        scenario_ref=step_ref.strip(),
+        delay_days=max(delay_days, 0),
+        weekly_limit=max(weekly_limit, 1),
+        send_time=send_time.strip() or "10:00",
+        required_tag=None,
+        message_text=text.strip(),
+        buttons_json=None,
+        photo_path=None,
+    )
+    msg = "Сегмент обновлен" if segment_id else "Сегмент создан"
+    return RedirectResponse(f"/users?msg={quote_plus(msg)}", status_code=302)
 
 
 @app.post("/users/tags/bulk")

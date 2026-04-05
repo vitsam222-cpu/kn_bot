@@ -9,6 +9,7 @@ from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardButton, Inli
 
 from config import settings
 from database import Database
+from formatting import markdown_to_html
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,15 +63,15 @@ async def send_scenario_message(message: Message, scenario: dict, user_id: int |
         try:
             await message.answer_photo(
                 photo=FSInputFile(image_path),
-                caption=scenario["bot_reply_text"],
+                caption=markdown_to_html(scenario["bot_reply_text"]),
                 reply_markup=markup,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
         except Exception:
             # fallback to text if image sending fails
             pass
-    await message.answer(scenario["bot_reply_text"], reply_markup=markup, parse_mode="Markdown")
+    await message.answer(markdown_to_html(scenario["bot_reply_text"]), reply_markup=markup, parse_mode="HTML")
 
 
 @dp.message(CommandStart())

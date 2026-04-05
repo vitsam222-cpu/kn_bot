@@ -65,9 +65,46 @@
     <button type="submit">Импортировать</button>
   </form>
 </div>
+<div class="card">
+  <h3>Сегменты автодожима по шагам</h3>
+  <form method="post" action="/users/segment/save" class="filters-stack">
+    <input type="text" name="segment_name" placeholder="Название сегмента (например: Шаг 2 — Лиды)" />
+    <input type="text" name="step_ref" placeholder="ID шага для автодобавления пользователей" required />
+    <input type="number" name="delay_days" min="0" value="3" placeholder="Через сколько дней отправить" required />
+    <input type="number" name="weekly_limit" min="1" value="1" placeholder="Сколько раз за неделю" required />
+    <input type="time" name="send_time" value="10:00" required />
+    <textarea data-markdown="true" name="text" placeholder="Текст сообщения в сегмент" required></textarea>
+    <button type="submit">Создать сегмент</button>
+  </form>
+  {% if segments %}
+  <div class="table-wrap">
+    <table>
+      <tr><th>ID</th><th>Сегмент</th><th>Шаг</th><th>Задержка (дни)</th><th>Повторов/7д</th><th>Время</th><th>Статус</th><th>Действие</th></tr>
+      {% for s in segments %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.segment_name or ("Сегмент #" ~ s.id) }}</td>
+        <td>{{ s.scenario_ref }}</td>
+        <td>{{ s.delay_days }}</td>
+        <td>{{ s.weekly_limit }}</td>
+        <td>{{ s.send_time or "10:00" }}</td>
+        <td>{{ "Активен" if s.is_active else "Пауза" }}</td>
+        <td>
+          <form method="post" action="/broadcast/rule/toggle" style="display:inline">
+            <input type="hidden" name="rule_id" value="{{ s.id }}" />
+            <input type="hidden" name="is_active" value="{{ 0 if s.is_active else 1 }}" />
+            <button type="submit">{{ "Пауза" if s.is_active else "Запустить" }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+</div>
 <div class="table-wrap">
 <table>
-  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Последний контакт</th><th>Статус</th><th>Действие</th></tr>
+  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Последний контакт</th><th>Статус</th><th>Теги</th><th>Действие</th></tr>
   {% for u in users %}
   <tr>
     <td><a href="/users/{{ u.user_id }}">{{ u.user_id }}</a></td>
@@ -75,6 +112,23 @@
     <td>{{ u.created_at }}</td>
     <td>{{ u.last_seen_at or "-" }}</td>
     <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
+    <td>
+      {% if u.tags %}
+        {% for tag in u.tags %}
+          <span class="chip">
+            {{ tag }}
+            <form method="post" action="/users/tag" style="display:inline">
+              <input type="hidden" name="user_id" value="{{ u.user_id }}" />
+              <input type="hidden" name="tag" value="{{ tag }}" />
+              <input type="hidden" name="action" value="remove" />
+              <button class="chip-delete" type="submit" title="Удалить тег">✕</button>
+            </form>
+          </span>
+        {% endfor %}
+      {% else %}
+        <span class="muted">—</span>
+      {% endif %}
+    </td>
     <td>
       <form method="post" action="/users/tag" class="filters-stack">
         <input type="hidden" name="user_id" value="{{ u.user_id }}" />
