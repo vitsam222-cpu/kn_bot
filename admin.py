@@ -61,6 +61,12 @@ def is_auth(request: Request) -> bool:
     return request.session.get("auth") is True
 
 
+def render_template(request: Request, name: str, context: dict[str, Any]):
+    shared = {"tasks_pending_count": db.get_pending_tasks_count()}
+    merged = {**context, **shared}
+    return templates.TemplateResponse(request=request, name=name, context=merged)
+
+
 def extract_transitions(scenario: dict[str, Any]) -> list[int]:
     transitions: set[int] = set()
     next_step = scenario.get("next_step")
@@ -88,7 +94,7 @@ def extract_transitions(scenario: dict[str, Any]) -> list[int]:
 async def login_page(request: Request):
     if is_auth(request):
         return RedirectResponse("/dashboard", status_code=302)
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": None})
+    return render_template(request=request, name="login.html", context={"error": None})
 
 
 @app.post("/", response_class=HTMLResponse)
@@ -96,7 +102,7 @@ async def login(request: Request, password: str = Form(...)):
     if password == settings.admin_password:
         request.session["auth"] = True
         return RedirectResponse("/dashboard", status_code=302)
-    return templates.TemplateResponse(request=request, name="login.html", context={"error": "Неверный пароль"})
+    return render_template(request=request, name="login.html", context={"error": "Неверный пароль"})
 
 
 @app.get("/logout")
@@ -139,7 +145,7 @@ async def dashboard(request: Request):
     scenarios = db.get_all_scenarios()
     all_tags = db.get_all_tags()
     flash_msg = request.query_params.get("msg")
-    return templates.TemplateResponse(
+    return render_template(
         request=request,
         name="dashboard.html",
         context={
@@ -280,18 +286,18 @@ async def broadcast(
             scheduled_at=None,
             status="running",
         )
-        result = await send_broadcast(
-            text,
-            user_ids,
-            buttons_json or None,
-            image_data,
-            photo_path=photo_path,
-            broadcast_id=broadcast_id,
+        db.create_task(
+            task_type="broadcast_send",
+            payload={
+                "broadcast_id": broadcast_id,
+                "text": text,
+                "user_ids": user_ids,
+                "buttons_json": buttons_json or None,
+                "photo_path": photo_path,
+            },
+            message=f"Рассылка #{broadcast_id} поставлена в очередь",
         )
-        db.update_broadcast_status(
-            broadcast_id, status="done", sent_count=result["sent"], failed_count=result["failed"], error_text=None
-        )
-        msg = f"Рассылка отправлена: {result['sent']} успешно, {result['failed']} ошибок"
+        msg = f"Рассылка #{broadcast_id} добавлена в очередь"
     return RedirectResponse(f"/dashboard?msg={quote_plus(msg)}", status_code=302)
 
 
@@ -397,6 +403,30 @@ async def start_scheduler() -> None:
                         )
                         if result["sent"] > 0:
                             db.log_step_rule_delivery(int(rule["id"]), int(user_id))
+
+                queued = db.get_queued_tasks(limit=20)
+                for task in queued:
+                    db.set_task_status(int(task["id"]), "running")
+                    payload = json.loads(task.get("payload_json") or "{}")
+                    if task["task_type"] == "broadcast_send":
+                        result = await send_broadcast(
+                            text=str(payload.get("text") or ""),
+                            user_ids=[int(uid) for uid in payload.get("user_ids") or []],
+                            buttons_json=payload.get("buttons_json"),
+                            photo=None,
+                            photo_path=payload.get("photo_path"),
+                            broadcast_id=payload.get("broadcast_id"),
+                        )
+                        db.update_broadcast_status(
+                            int(payload.get("broadcast_id")),
+                            status="done",
+                            sent_count=result["sent"],
+                            failed_count=result["failed"],
+                            error_text=None,
+                        )
+                        db.set_task_status(int(task["id"]), "done", message="Задача выполнена")
+                    else:
+                        db.set_task_status(int(task["id"]), "failed", message="Неизвестный тип задачи")
             except Exception as exc:
                 # keep background loop alive
                 print(f"Broadcast scheduler error: {exc}")
@@ -432,7 +462,7 @@ async def scenarios_page(request: Request):
                 broken_links.append({"source": branch["id"], "target": target})
     orphan_ids = sorted([sid for sid, refs in incoming_refs.items() if refs == 0 and sid != (start_scenario or {}).get("id")])
 
-    return templates.TemplateResponse(
+    return render_template(
         request=request,
         name="scenarios.html",
         context={
@@ -542,7 +572,7 @@ async def users_page(request: Request):
     scenario_id = db.resolve_scenario_ref(step_ref) if step_ref else None
     users = db.get_users_filtered(tag=filter_tag, activity=filter_activity, scenario_id=scenario_id)
     stats = db.get_stats()
-    return templates.TemplateResponse(
+    return render_template(
         request=request,
         name="users.html",
         context={
@@ -577,11 +607,19 @@ async def user_profile(request: Request, user_id: int):
     events = db.get_user_events(user_id)
     visits = db.get_user_step_visits(user_id)
     deliveries = db.get_user_delivery_logs(user_id)
-    return templates.TemplateResponse(
+    return render_template(
         request=request,
         name="user_profile.html",
         context={"user": users[0], "events": events, "visits": visits, "deliveries": deliveries, "tags": db.get_user_tags(user_id)},
     )
+
+
+@app.get("/tasks", response_class=HTMLResponse)
+async def tasks_page(request: Request):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    tasks = db.get_task_history()
+    return render_template(request=request, name="tasks.html", context={"tasks": tasks})
 
 
 @app.post("/users/tag")

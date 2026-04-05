@@ -52,7 +52,9 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
 
 
 async def send_scenario_message(message: Message, scenario: dict) -> None:
-    db.increment_scenario_visit(int(scenario["id"]), user_id=message.from_user.id)
+    scenario_id = int(scenario["id"])
+    db.increment_scenario_visit(scenario_id, user_id=message.from_user.id)
+    db.add_user_tag(message.from_user.id, f"step_{scenario_id}")
     markup = build_keyboard(scenario.get("buttons_json"))
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():

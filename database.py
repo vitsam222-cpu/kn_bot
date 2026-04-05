@@ -128,6 +128,17 @@ class Database:
                     message_text TEXT,
                     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS task_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_type TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    payload_json TEXT,
+                    message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP,
+                    finished_at TIMESTAMP
+                );
                 """
             )
             scenario_columns = {
@@ -838,6 +849,56 @@ class Database:
                 (scenario_id, f"+{max(delay_days, 0)} day", f"-{max(delay_days, 0)} day"),
             ).fetchone()
         return str(row["next_trigger"]) if row and row["next_trigger"] else None
+
+    def create_task(self, task_type: str, payload: dict[str, Any] | None = None, message: str | None = None) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO task_history(task_type, status, payload_json, message)
+                VALUES(?, 'queued', ?, ?)
+                """,
+                (task_type, json.dumps(payload or {}, ensure_ascii=False), message),
+            )
+            return int(cur.lastrowid)
+
+    def get_queued_tasks(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM task_history
+                WHERE status='queued'
+                ORDER BY id
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_task_status(self, task_id: int, status: str, message: str | None = None) -> None:
+        with self.connect() as conn:
+            if status == "running":
+                conn.execute(
+                    "UPDATE task_history SET status=?, started_at=CURRENT_TIMESTAMP, message=COALESCE(?, message) WHERE id=?",
+                    (status, message, task_id),
+                )
+            elif status in {"done", "failed"}:
+                conn.execute(
+                    "UPDATE task_history SET status=?, finished_at=CURRENT_TIMESTAMP, message=COALESCE(?, message) WHERE id=?",
+                    (status, message, task_id),
+                )
+            else:
+                conn.execute("UPDATE task_history SET status=?, message=COALESCE(?, message) WHERE id=?", (status, message, task_id))
+
+    def get_task_history(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM task_history ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_pending_tasks_count(self) -> int:
+        with self.connect() as conn:
+            return int(
+                conn.execute("SELECT COUNT(*) FROM task_history WHERE status IN ('queued','running')").fetchone()[0]
+            )
 
     def add_tag_to_filtered_users(self, tag: str, activity: str | None = None, scenario_id: int | None = None) -> int:
         users = self.get_users_filtered(tag=None, activity=activity, scenario_id=scenario_id)

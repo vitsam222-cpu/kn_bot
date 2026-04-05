@@ -15,6 +15,7 @@
         <a data-nav href="/dashboard">Дашборд</a>
         <a data-nav href="/scenarios">Сценарии</a>
         <a data-nav href="/users">Пользователи</a>
+        <a data-nav href="/tasks">Задачи{% if tasks_pending_count %} ({{ tasks_pending_count }}){% endif %}</a>
         <a href="/logout">Выход</a>
       </nav>
     </aside>

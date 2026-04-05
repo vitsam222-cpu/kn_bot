@@ -10,10 +10,10 @@ body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1
 main { max-width: 1180px; }
 .card { background: #fff; padding: 16px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
 .stats { display: grid; grid-template-columns: repeat(2, minmax(180px, 320px)); gap: 12px; }
-.two-col-grid { display: grid; grid-template-columns: repeat(2, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.two-col-grid { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: start; }
 textarea, input, select { width: 100%; box-sizing: border-box; padding: 8px; margin: 8px 0; }
 button, .btn { background: #3b6cff; color: #fff; border: 0; padding: 8px 12px; border-radius: 6px; cursor: pointer; text-decoration: none; display:inline-block; }
-table { width: 100%; border-collapse: collapse; background: white; }
+table { width: 100%; border-collapse: collapse; background: white; display: block; overflow-x: auto; }
 th, td { border: 1px solid #e6e6f0; padding: 8px; vertical-align: top; text-align: left; }
 .error { color: #d10000; }
 .muted { color: #5f6880; margin-top: 0; }
@@ -34,6 +34,5 @@ code { white-space: pre-wrap; }
 .modal-content { background: #fff; width: min(640px, 92vw); border-radius: 10px; padding: 16px; }
 .modal.hidden { display: none !important; }
 @media (max-width: 980px) {
-  .two-col-grid { grid-template-columns: 1fr; }
   .stats { grid-template-columns: 1fr 1fr; }
 }
