@@ -612,7 +612,6 @@ async def users_page(request: Request):
     for user in users:
         user["tags"] = tags_map.get(int(user["user_id"]), [])
     stats = db.get_stats()
-    segments = db.get_segments(active_only=False)
     return render_template(
         request=request,
         name="users.html",
@@ -625,8 +624,22 @@ async def users_page(request: Request):
             "filter_activity": filter_activity or "",
             "filter_step_ref": step_ref or "",
             "flash_msg": request.query_params.get("msg"),
-            "segments": segments,
+        },
+    )
+
+
+@app.get("/segments", response_class=HTMLResponse)
+async def segments_page(request: Request):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    return render_template(
+        request=request,
+        name="segments.html",
+        context={
+            "segments": db.get_segments(active_only=False),
             "segment_rules": db.get_segment_campaign_rules(active_only=False),
+            "scenarios": db.get_all_scenarios(),
+            "flash_msg": request.query_params.get("msg"),
         },
     )
 
@@ -707,7 +720,7 @@ async def save_user_segment(
         message_text=text.strip(),
     )
     msg = "Сегмент обновлен" if segment_id else "Сегмент создан"
-    return RedirectResponse(f"/users?msg={quote_plus(msg)}", status_code=302)
+    return RedirectResponse(f"/segments?msg={quote_plus(msg)}", status_code=302)
 
 
 @app.post("/users/segment/delete")
@@ -715,7 +728,7 @@ async def delete_user_segment(request: Request, segment_id: int = Form(...)):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
     db.delete_segment(segment_id)
-    return RedirectResponse(f"/users?msg={quote_plus('Сегмент удален')}", status_code=302)
+    return RedirectResponse(f"/segments?msg={quote_plus('Сегмент удален')}", status_code=302)
 
 
 @app.post("/users/segment/toggle")
@@ -724,7 +737,7 @@ async def toggle_user_segment(request: Request, segment_id: int = Form(...), is_
         return RedirectResponse("/", status_code=302)
     db.set_segment_active(segment_id, bool(is_active))
     msg = "Сегмент активирован" if is_active else "Сегмент поставлен на паузу"
-    return RedirectResponse(f"/users?msg={quote_plus(msg)}", status_code=302)
+    return RedirectResponse(f"/segments?msg={quote_plus(msg)}", status_code=302)
 
 
 @app.post("/users/tags/bulk")
