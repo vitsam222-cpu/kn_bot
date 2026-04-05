@@ -11,6 +11,8 @@
   <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
 </div>
 
+<div class="two-col-grid">
+
 <div class="card">
   <h2>Рассылка</h2>
   <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="return onBroadcastSubmit(event)">
@@ -89,6 +91,12 @@
     <label>Лимит отправок в 7 дней:
       <input type="number" name="weekly_limit" id="rule-weekly-limit" min="1" value="1" required />
     </label>
+    <label>Время отправки (локальное):
+      <input type="time" name="send_time" id="rule-send-time" value="10:00" required />
+    </label>
+    <label>Только пользователи с тегом (опционально):
+      <input type="text" name="required_tag" id="rule-required-tag" placeholder="например, warm_lead" />
+    </label>
     <textarea name="text" id="rule-text" placeholder="Текст автосообщения (Markdown)" required></textarea>
     <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
     <small id="rule-existing-photo-label"></small>
@@ -107,13 +115,15 @@
 <div class="card">
   <h2>Правила автодожима</h2>
   <table>
-    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Статус</th><th>След. срабатывание</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Время</th><th>Тег-условие</th><th>Статус</th><th>След. срабатывание</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
     {% for r in drip_rules %}
     <tr>
       <td>{{ r.id }}</td>
       <td>{{ r.scenario_ref }}</td>
       <td>{{ r.delay_days }}</td>
       <td>{{ r.weekly_limit }}</td>
+      <td>{{ r.send_time or "10:00" }}</td>
+      <td>{{ r.required_tag or "-" }}</td>
       <td>{{ "Активно" if r.is_active else "Пауза" }}</td>
       <td>{{ r.next_trigger_at or "-" }}</td>
       <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
@@ -136,6 +146,8 @@
           data-scenario-ref="{{ r.scenario_ref }}"
           data-delay-days="{{ r.delay_days }}"
           data-weekly-limit="{{ r.weekly_limit }}"
+          data-send-time="{{ r.send_time or '10:00' }}"
+          data-required-tag="{{ r.required_tag or '' }}"
           data-text="{{ r.message_text }}"
           data-buttons='{{ r.buttons_json or "[]" }}'
           data-photo-path="{{ r.photo_path or '' }}"
@@ -154,6 +166,7 @@
     </tr>
     {% endfor %}
   </table>
+</div>
 </div>
 
 <div id="preview-modal" class="modal hidden">
@@ -214,6 +227,8 @@ function editRule(btn) {
   document.getElementById('rule-scenario-ref').value = btn.dataset.scenarioRef || '';
   document.getElementById('rule-delay-days').value = btn.dataset.delayDays || 3;
   document.getElementById('rule-weekly-limit').value = btn.dataset.weeklyLimit || 1;
+  document.getElementById('rule-send-time').value = btn.dataset.sendTime || '10:00';
+  document.getElementById('rule-required-tag').value = btn.dataset.requiredTag || '';
   document.getElementById('rule-text').value = btn.dataset.text || '';
   document.getElementById('rule-existing-photo-path').value = btn.dataset.photoPath || '';
   document.getElementById('rule-existing-photo-label').textContent = btn.dataset.photoPath ? `Текущее фото: ${btn.dataset.photoPath}` : '';
@@ -235,6 +250,8 @@ function resetRuleForm() {
   document.getElementById('rule-scenario-ref').value = '';
   document.getElementById('rule-delay-days').value = 3;
   document.getElementById('rule-weekly-limit').value = 1;
+  document.getElementById('rule-send-time').value = '10:00';
+  document.getElementById('rule-required-tag').value = '';
   document.getElementById('rule-text').value = '';
   document.getElementById('rule-existing-photo-path').value = '';
   document.getElementById('rule-existing-photo-label').textContent = '';

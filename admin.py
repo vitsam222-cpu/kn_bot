@@ -121,6 +121,8 @@ async def dashboard(request: Request):
                 scenario_id=scenario_id,
                 delay_days=int(rule.get("delay_days") or 0),
                 weekly_limit=int(rule.get("weekly_limit") or 1),
+                send_time=str(rule.get("send_time") or "00:00"),
+                required_tag=(rule.get("required_tag") or None),
                 limit=30,
             )
             next_trigger_at = db.get_rule_next_trigger_at(
@@ -300,6 +302,8 @@ async def create_step_rule(
     scenario_ref: str = Form(...),
     delay_days: int = Form(3),
     weekly_limit: int = Form(1),
+    send_time: str = Form("10:00"),
+    required_tag: str = Form(""),
     text: str = Form(...),
     buttons_json: str = Form(""),
     photo: UploadFile | None = File(None),
@@ -321,6 +325,8 @@ async def create_step_rule(
         scenario_ref=scenario_ref,
         delay_days=max(delay_days, 0),
         weekly_limit=max(weekly_limit, 1),
+        send_time=send_time.strip() or "10:00",
+        required_tag=required_tag.strip() or None,
         message_text=text.strip(),
         buttons_json=buttons_json.strip() or None,
         photo_path=photo_path,
@@ -377,6 +383,8 @@ async def start_scheduler() -> None:
                         scenario_id=scenario_id,
                         delay_days=int(rule.get("delay_days") or 0),
                         weekly_limit=int(rule.get("weekly_limit") or 1),
+                        send_time=str(rule.get("send_time") or "00:00"),
+                        required_tag=(rule.get("required_tag") or None),
                     )
                     for user_id in due_user_ids:
                         result = await send_broadcast(
@@ -545,6 +553,7 @@ async def users_page(request: Request):
             "filter_tag": filter_tag or "",
             "filter_activity": filter_activity or "",
             "filter_step_ref": step_ref or "",
+            "flash_msg": request.query_params.get("msg"),
         },
     )
 
@@ -586,6 +595,24 @@ async def tag_user(request: Request, user_id: int = Form(...), tag: str = Form(.
         else:
             db.add_user_tag(user_id, normalized)
     return RedirectResponse("/users", status_code=302)
+
+
+@app.post("/users/tags/bulk")
+async def bulk_tag_users(
+    request: Request,
+    tag: str = Form(...),
+    activity: str = Form(""),
+    step_ref: str = Form(""),
+):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    scenario_id = db.resolve_scenario_ref(step_ref) if step_ref.strip() else None
+    tagged = db.add_tag_to_filtered_users(
+        tag=tag.strip(),
+        activity=activity.strip() or None,
+        scenario_id=scenario_id,
+    )
+    return RedirectResponse(f"/users?msg={quote_plus(f'Присвоено тегов: {tagged}')}", status_code=302)
 
 
 @app.post("/users/import-list")

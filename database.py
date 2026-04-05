@@ -96,6 +96,8 @@ class Database:
                     scenario_ref TEXT NOT NULL,
                     delay_days INTEGER NOT NULL DEFAULT 3,
                     weekly_limit INTEGER NOT NULL DEFAULT 1,
+                    send_time TEXT NOT NULL DEFAULT '10:00',
+                    required_tag TEXT,
                     message_text TEXT NOT NULL,
                     buttons_json TEXT,
                     photo_path TEXT,
@@ -155,6 +157,13 @@ class Database:
                 id_1_row = conn.execute("SELECT id FROM scenarios WHERE id=1").fetchone()
                 if start_row and int(start_row["id"]) != 1 and not id_1_row:
                     conn.execute("UPDATE scenarios SET id=1 WHERE id=?", (int(start_row["id"]),))
+            rule_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(step_broadcast_rules)").fetchall()
+            }
+            if "send_time" not in rule_columns:
+                conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN send_time TEXT NOT NULL DEFAULT '10:00'")
+            if "required_tag" not in rule_columns:
+                conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN required_tag TEXT")
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -583,6 +592,8 @@ class Database:
         scenario_ref: str,
         delay_days: int,
         weekly_limit: int,
+        send_time: str,
+        required_tag: str | None,
         message_text: str,
         buttons_json: str | None = None,
         photo_path: str | None = None,
@@ -591,11 +602,11 @@ class Database:
             cur = conn.execute(
                 """
                 INSERT INTO step_broadcast_rules(
-                    scenario_ref, delay_days, weekly_limit, message_text, buttons_json, photo_path, is_active
+                    scenario_ref, delay_days, weekly_limit, send_time, required_tag, message_text, buttons_json, photo_path, is_active
                 )
-                VALUES(?, ?, ?, ?, ?, ?, 1)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, 1)
                 """,
-                (scenario_ref.strip(), delay_days, weekly_limit, message_text, buttons_json, photo_path),
+                (scenario_ref.strip(), delay_days, weekly_limit, send_time, required_tag, message_text, buttons_json, photo_path),
             )
             return int(cur.lastrowid)
 
@@ -604,6 +615,8 @@ class Database:
         scenario_ref: str,
         delay_days: int,
         weekly_limit: int,
+        send_time: str,
+        required_tag: str | None,
         message_text: str,
         buttons_json: str | None = None,
         photo_path: str | None = None,
@@ -614,13 +627,15 @@ class Database:
                 conn.execute(
                     """
                     UPDATE step_broadcast_rules
-                    SET scenario_ref=?, delay_days=?, weekly_limit=?, message_text=?, buttons_json=?, photo_path=?
+                    SET scenario_ref=?, delay_days=?, weekly_limit=?, send_time=?, required_tag=?, message_text=?, buttons_json=?, photo_path=?
                     WHERE id=?
                     """,
                     (
                         scenario_ref.strip(),
                         delay_days,
                         weekly_limit,
+                        send_time,
+                        required_tag,
                         message_text,
                         buttons_json,
                         photo_path,
@@ -632,6 +647,8 @@ class Database:
             scenario_ref=scenario_ref,
             delay_days=delay_days,
             weekly_limit=weekly_limit,
+            send_time=send_time,
+            required_tag=required_tag,
             message_text=message_text,
             buttons_json=buttons_json,
             photo_path=photo_path,
@@ -654,7 +671,13 @@ class Database:
         return [dict(r) for r in rows]
 
     def get_users_due_for_step_rule(
-        self, rule_id: int, scenario_id: int, delay_days: int, weekly_limit: int
+        self,
+        rule_id: int,
+        scenario_id: int,
+        delay_days: int,
+        weekly_limit: int,
+        send_time: str = "00:00",
+        required_tag: str | None = None,
     ) -> list[int]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -669,6 +692,10 @@ class Database:
                 FROM latest_visit lv
                 WHERE lv.user_id NOT IN (SELECT user_id FROM blacklist)
                   AND datetime(lv.last_visit) <= datetime('now', ?)
+                  AND strftime('%H:%M', 'now', 'localtime') >= ?
+                  AND (? IS NULL OR EXISTS (
+                      SELECT 1 FROM user_tags ut WHERE ut.user_id = lv.user_id AND ut.tag = ?
+                  ))
                   AND (
                       SELECT COUNT(*)
                       FROM step_broadcast_log sbl
@@ -688,12 +715,29 @@ class Database:
                       )) < datetime(lv.last_visit)
                   )
                 """,
-                (scenario_id, f"-{max(delay_days, 0)} day", rule_id, max(weekly_limit, 1), rule_id, rule_id),
+                (
+                    scenario_id,
+                    f"-{max(delay_days, 0)} day",
+                    send_time or "00:00",
+                    required_tag,
+                    required_tag,
+                    rule_id,
+                    max(weekly_limit, 1),
+                    rule_id,
+                    rule_id,
+                ),
             ).fetchall()
         return [int(r["user_id"]) for r in rows]
 
     def get_due_users_for_step_rule_detailed(
-        self, rule_id: int, scenario_id: int, delay_days: int, weekly_limit: int, limit: int = 30
+        self,
+        rule_id: int,
+        scenario_id: int,
+        delay_days: int,
+        weekly_limit: int,
+        send_time: str = "00:00",
+        required_tag: str | None = None,
+        limit: int = 30,
     ) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -709,6 +753,10 @@ class Database:
                 JOIN users u ON u.user_id = lv.user_id
                 WHERE lv.user_id NOT IN (SELECT user_id FROM blacklist)
                   AND datetime(lv.last_visit) <= datetime('now', ?)
+                  AND strftime('%H:%M', 'now', 'localtime') >= ?
+                  AND (? IS NULL OR EXISTS (
+                      SELECT 1 FROM user_tags ut WHERE ut.user_id = lv.user_id AND ut.tag = ?
+                  ))
                   AND (
                       SELECT COUNT(*)
                       FROM step_broadcast_log sbl
@@ -733,6 +781,9 @@ class Database:
                 (
                     scenario_id,
                     f"-{max(delay_days, 0)} day",
+                    send_time or "00:00",
+                    required_tag,
+                    required_tag,
                     rule_id,
                     max(weekly_limit, 1),
                     rule_id,
@@ -787,3 +838,11 @@ class Database:
                 (scenario_id, f"+{max(delay_days, 0)} day", f"-{max(delay_days, 0)} day"),
             ).fetchone()
         return str(row["next_trigger"]) if row and row["next_trigger"] else None
+
+    def add_tag_to_filtered_users(self, tag: str, activity: str | None = None, scenario_id: int | None = None) -> int:
+        users = self.get_users_filtered(tag=None, activity=activity, scenario_id=scenario_id)
+        count = 0
+        for u in users:
+            self.add_user_tag(int(u["user_id"]), tag)
+            count += 1
+        return count
