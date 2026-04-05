@@ -30,7 +30,31 @@ SCENARIO_UPLOAD_DIR = Path("uploads/scenarios")
 SCENARIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 BROADCAST_UPLOAD_DIR = Path("uploads/broadcasts")
 BROADCAST_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-TIMEZONE_OPTIONS = ["UTC", "Europe/Moscow", "Asia/Almaty", "Asia/Tashkent"]
+TIMEZONE_OPTIONS = [
+    ("Europe/Kaliningrad", "Калининград (UTC+2)"),
+    ("Europe/Moscow", "Москва (UTC+3)"),
+    ("Europe/Simferopol", "Симферополь (UTC+3)"),
+    ("Europe/Volgograd", "Волгоград (UTC+3)"),
+    ("Europe/Samara", "Самара (UTC+4)"),
+    ("Asia/Yekaterinburg", "Екатеринбург (UTC+5)"),
+    ("Asia/Omsk", "Омск (UTC+6)"),
+    ("Asia/Novosibirsk", "Новосибирск (UTC+7)"),
+    ("Asia/Barnaul", "Барнаул (UTC+7)"),
+    ("Asia/Tomsk", "Томск (UTC+7)"),
+    ("Asia/Novokuznetsk", "Новокузнецк (UTC+7)"),
+    ("Asia/Krasnoyarsk", "Красноярск (UTC+7)"),
+    ("Asia/Irkutsk", "Иркутск (UTC+8)"),
+    ("Asia/Chita", "Чита (UTC+9)"),
+    ("Asia/Yakutsk", "Якутск (UTC+9)"),
+    ("Asia/Khandyga", "Хандыга (UTC+9)"),
+    ("Asia/Vladivostok", "Владивосток (UTC+10)"),
+    ("Asia/Ust-Nera", "Усть-Нера (UTC+10)"),
+    ("Asia/Sakhalin", "Сахалин (UTC+11)"),
+    ("Asia/Magadan", "Магадан (UTC+11)"),
+    ("Asia/Srednekolymsk", "Среднеколымск (UTC+11)"),
+    ("Asia/Kamchatka", "Камчатка (UTC+12)"),
+    ("Asia/Anadyr", "Анадырь (UTC+12)"),
+]
 
 
 def is_auth(request: Request) -> bool:
@@ -168,7 +192,8 @@ async def broadcast(
 
     schedule_utc = None
     if scheduled_at.strip():
-        tz = ZoneInfo(timezone if timezone in TIMEZONE_OPTIONS else "UTC")
+        valid_timezones = {tz for tz, _ in TIMEZONE_OPTIONS}
+        tz = ZoneInfo(timezone if timezone in valid_timezones else "Europe/Moscow")
         dt_local = datetime.strptime(scheduled_at, "%Y-%m-%dT%H:%M")
         schedule_utc = dt_local.replace(tzinfo=tz).astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%d %H:%M:%S")
 

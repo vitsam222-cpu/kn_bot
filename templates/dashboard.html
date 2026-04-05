@@ -28,8 +28,8 @@
     </label>
     <label>Таймзона:
       <select name="timezone">
-        {% for tz in timezone_options %}
-          <option value="{{ tz }}">{{ tz }}</option>
+        {% for tz_value, tz_label in timezone_options %}
+          <option value="{{ tz_value }}" {% if tz_value == "Europe/Moscow" %}selected{% endif %}>{{ tz_label }}</option>
         {% endfor %}
       </select>
     </label>
