@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Пользователи</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
+<div class="stats">
+  <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
+  <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
+</div>
+<form method="get" action="/users" class="card filters-stack">
+  <h3>Фильтры пользователей</h3>
+  <label>Тег:
+    <input type="text" name="tag" value="{{ filter_tag }}" list="tags-list" placeholder="например, vip" />
+    <datalist id="tags-list">
+      {% for t in all_tags %}
+      <option value="{{ t }}"></option>
+      {% endfor %}
+    </datalist>
+  </label>
+  <label>Активность:
+    <select name="activity">
+      <option value="" {% if not filter_activity %}selected{% endif %}>Любая</option>
+      <option value="dau" {% if filter_activity == "dau" %}selected{% endif %}>DAU (24ч)</option>
+      <option value="wau" {% if filter_activity == "wau" %}selected{% endif %}>WAU (7д)</option>
+    </select>
+  </label>
+  <label>Посетил шаг (ID/тег):
+    <input type="text" name="step_ref" value="{{ filter_step_ref }}" list="steps-list" />
+    <datalist id="steps-list">
+      {% for sc in scenarios %}
+      <option value="{{ sc.id }}">{{ sc.trigger_text }}</option>
+      <option value="{{ sc.trigger_text }}">{{ sc.id }}</option>
+      {% endfor %}
+    </datalist>
+  </label>
+  <div class="form-actions">
+    <button type="submit">Применить</button>
+    <a class="btn btn-secondary" href="/users">Сбросить</a>
+  </div>
+</form>
+
+<a class="btn" href="/users/export?tag={{ filter_tag }}&activity={{ filter_activity }}&step_ref={{ filter_step_ref }}">Скачать CSV (по фильтрам)</a>
+<div class="card">
+  <h3>Конструктор тегов (массово)</h3>
+  <form method="post" action="/users/tags/bulk" class="filters-stack">
+    <input type="text" name="tag" placeholder="Тег для присвоения" required />
+    <select name="activity">
+      <option value="">Без фильтра активности</option>
+      <option value="dau">Только DAU (24ч)</option>
+      <option value="wau">Только WAU (7д)</option>
+    </select>
+    <input type="text" name="step_ref" placeholder="Шаг ID/тег (опц.)" list="steps-list" />
+    <button type="submit">Присвоить тег по условию</button>
+  </form>
+</div>
+<div class="card">
+  <h3>Импорт whitelist/blacklist</h3>
+  <form method="post" action="/users/import-list" enctype="multipart/form-data" class="filters-stack">
+    <select name="mode">
+      <option value="blacklist">Импорт в blacklist</option>
+      <option value="whitelist">Импорт в whitelist (разбан)</option>
+    </select>
+    <input type="file" name="file" required />
+    <button type="submit">Импортировать</button>
+  </form>
+</div>
+<div class="table-wrap">
+<table>
+  <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Последний контакт</th><th>Статус</th><th>Действие</th></tr>
+  {% for u in users %}
+  <tr>
+    <td><a href="/users/{{ u.user_id }}">{{ u.user_id }}</a></td>
+    <td>@{{ u.username or "-" }}</td>
+    <td>{{ u.created_at }}</td>
+    <td>{{ u.last_seen_at or "-" }}</td>
+    <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
+    <td>
+      <form method="post" action="/users/tag" class="filters-stack">
+        <input type="hidden" name="user_id" value="{{ u.user_id }}" />
+        <input type="text" name="tag" placeholder="Введите тег" />
+        <select name="action">
+          <option value="add">Добавить тег</option>
+          <option value="remove">Удалить тег</option>
+        </select>
+        <button type="submit">Применить тег</button>
+      </form>
+      <form method="post" action="/users/toggle-ban">
+        <input type="hidden" name="user_id" value="{{ u.user_id }}" />
+        <input type="hidden" name="banned" value="{{ 0 if u.is_banned else 1 }}" />
+        <button type="submit">{{ "Разбан" if u.is_banned else "Бан" }}</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}

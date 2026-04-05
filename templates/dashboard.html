@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Дашборд</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
+<div class="stats">
+  <div class="card">Всего пользователей: <strong>{{ users_count }}</strong></div>
+  <div class="card">Заблокировано: <strong>{{ blocked_count }}</strong></div>
+  <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
+  <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
+</div>
+
+<div class="two-col-grid">
+
+<div class="card">
+  <h2>Рассылка</h2>
+  <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="return onBroadcastSubmit(event)">
+    <textarea data-markdown="true" name="text" placeholder="Текст сообщения (поддерживается Markdown)" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+
+    <h3>Кнопки</h3>
+    <div id="broadcast-buttons"></div>
+    <div class="button-row-actions">
+      <button class="btn-secondary" type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="broadcast-buttons-json" type="hidden" name="buttons_json" />
+    <label>Отложить до:
+      <input type="datetime-local" name="scheduled_at" />
+    </label>
+    <label>Таймзона:
+      <select name="timezone">
+        {% for tz_value, tz_label in timezone_options %}
+          <option value="{{ tz_value }}" {% if tz_value == "Europe/Moscow" %}selected{% endif %}>{{ tz_label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Сегмент:
+      <select name="segment_type">
+        <option value="all">Все активные</option>
+        <option value="dau">DAU (24ч)</option>
+        <option value="wau">WAU (7д)</option>
+        <option value="tag">По тегу</option>
+        <option value="step">По шагу</option>
+      </select>
+    </label>
+    <input type="text" name="segment_value" placeholder="Тег (для сегмента tag)" />
+    <input type="text" name="segment_step_ref" placeholder="Шаг ID/тег (для сегмента step)" />
+
+    <div class="form-actions">
+      <button class="btn-secondary" type="button" onclick="showPreview()">Превью</button>
+      <button id="broadcast-submit-btn" type="submit">Отправить</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>История рассылок</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>ID</th><th>Время</th><th>Статус</th><th>План</th><th>Отправлено</th><th>Ошибки</th><th>Текст</th></tr>
+    {% for b in broadcast_history %}
+    <tr>
+      <td>{{ b.id }}</td>
+      <td>{{ b.created_at }}</td>
+      <td>{{ b.status }}</td>
+      <td>{{ b.scheduled_at or "-" }} {{ b.timezone or "" }}</td>
+      <td>{{ b.sent_count }}</td>
+      <td>{{ b.failed_count }}</td>
+      <td>{{ b.message_text[:80] }}{% if b.message_text|length > 80 %}...{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Автодожим по посещению шага</h2>
+  <form method="post" action="/broadcast/rule" enctype="multipart/form-data" onsubmit="return onRuleSubmit(event)">
+    <input type="hidden" name="rule_id" id="rule-id-input" />
+    <input type="hidden" name="existing_photo_path" id="rule-existing-photo-path" />
+    <label>Шаг (ID или тег):
+      <input type="text" name="scenario_ref" id="rule-scenario-ref" list="scenario-ref-list" placeholder="например: 2 или docs" required />
+    </label>
+    <datalist id="scenario-ref-list">
+      {% for sc in scenarios %}
+      <option value="{{ sc.id }}">{{ sc.trigger_text }}</option>
+      <option value="{{ sc.trigger_text }}">{{ sc.id }}</option>
+      {% endfor %}
+    </datalist>
+    <label>Отправить через (дней):
+      <input type="number" name="delay_days" id="rule-delay-days" min="0" value="3" required />
+    </label>
+    <label>Лимит отправок в 7 дней:
+      <input type="number" name="weekly_limit" id="rule-weekly-limit" min="1" value="1" required />
+    </label>
+    <label>Время отправки (локальное):
+      <input type="time" name="send_time" id="rule-send-time" value="10:00" required />
+    </label>
+    <label>Только пользователи с тегом (опционально):
+      <input type="text" name="required_tag" id="rule-required-tag" placeholder="например, warm_lead" />
+    </label>
+    <textarea data-markdown="true" name="text" id="rule-text" placeholder="Текст автосообщения (Markdown)" required></textarea>
+    <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
+    <small id="rule-existing-photo-label"></small>
+
+    <h3>Кнопки автосообщения</h3>
+    <div id="rule-buttons"></div>
+    <div class="button-row-actions">
+      <button class="btn-secondary" type="button" onclick="addButtonRow('rule-buttons')">+ Добавить кнопку</button>
+    </div>
+    <input id="rule-buttons-json" type="hidden" name="buttons_json" />
+    <div class="form-actions">
+      <button id="rule-submit-btn" type="submit">Сохранить правило</button>
+      <button class="btn-secondary" type="button" onclick="resetRuleForm()">Новое правило</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Правила автодожима</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Время</th><th>Тег-условие</th><th>Статус</th><th>След. срабатывание</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
+    {% for r in drip_rules %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td>{{ r.scenario_ref }}</td>
+      <td>{{ r.delay_days }}</td>
+      <td>{{ r.weekly_limit }}</td>
+      <td>{{ r.send_time or "10:00" }}</td>
+      <td>{{ r.required_tag or "-" }}</td>
+      <td>{{ "Активно" if r.is_active else "Пауза" }}</td>
+      <td>{{ r.next_trigger_at or "-" }}</td>
+      <td>{{ r.message_text[:80] }}{% if r.message_text|length > 80 %}...{% endif %}</td>
+      <td>
+        <strong>{{ r.due_count }}</strong>
+        {% if r.due_users %}
+          <div>
+            {% for u in r.due_users %}
+              <span class="chip">{{ u.user_id }}{% if u.username %} (@{{ u.username }}){% endif %}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="muted">Нет пользователей</div>
+        {% endif %}
+      </td>
+      <td>
+        <button
+          type="button"
+          data-id="{{ r.id }}"
+          data-scenario-ref="{{ r.scenario_ref }}"
+          data-delay-days="{{ r.delay_days }}"
+          data-weekly-limit="{{ r.weekly_limit }}"
+          data-send-time="{{ r.send_time or '10:00' }}"
+          data-required-tag="{{ r.required_tag or '' }}"
+          data-text="{{ r.message_text }}"
+          data-buttons='{{ r.buttons_json or "[]" }}'
+          data-photo-path="{{ r.photo_path or '' }}"
+          onclick="editRule(this)"
+        >Редактировать</button>
+        <form method="post" action="/broadcast/rule/delete" style="display:inline" onsubmit="return confirm('Удалить правило автодожима?')">
+          <input type="hidden" name="rule_id" value="{{ r.id }}" />
+          <button type="submit">Удалить</button>
+        </form>
+        <form method="post" action="/broadcast/rule/toggle" style="display:inline">
+          <input type="hidden" name="rule_id" value="{{ r.id }}" />
+          <input type="hidden" name="is_active" value="{{ 0 if r.is_active else 1 }}" />
+          <button type="submit">{{ "Пауза" if r.is_active else "Возобновить" }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+</div>
+
+<div id="preview-modal" class="modal hidden">
+  <div class="modal-content">
+    <h3>Превью рассылки</h3>
+    <p id="preview-text"></p>
+    <div id="preview-buttons"></div>
+    <button class="btn-secondary" type="button" onclick="hidePreview()">Закрыть</button>
+  </div>
+</div>
+
+<script>
+function addButtonRow(containerId, text = '', url = '') {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'button-row button-row-simple';
+  row.innerHTML = `
+    <input type="text" class="btn-text" placeholder="Текст кнопки" value="${text}" />
+    <input type="url" class="btn-url" placeholder="https://example.com" value="${url}" />
+    <button type="button" onclick="this.parentElement.remove()">Удалить</button>
+  `;
+  container.appendChild(row);
+}
+
+function buildButtonsJson(prefix) {
+  const rows = Array.from(document.querySelectorAll(`#${prefix}-buttons .button-row`));
+  const buttons = rows
+    .map((row) => {
+      const text = row.querySelector('.btn-text').value.trim();
+      const url = row.querySelector('.btn-url').value.trim();
+      if (!text || !url) return null;
+      return { text, url };
+    })
+    .filter(Boolean);
+
+  const hidden = document.getElementById(`${prefix}-buttons-json`);
+  hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+}
+
+function onBroadcastSubmit(event) {
+  buildButtonsJson('broadcast');
+  const btn = document.getElementById('broadcast-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Отправляем...';
+  return true;
+}
+
+function onRuleSubmit(event) {
+  buildButtonsJson('rule');
+  const btn = document.getElementById('rule-submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Сохраняем...';
+  return true;
+}
+
+function editRule(btn) {
+  document.getElementById('rule-id-input').value = btn.dataset.id || '';
+  document.getElementById('rule-scenario-ref').value = btn.dataset.scenarioRef || '';
+  document.getElementById('rule-delay-days').value = btn.dataset.delayDays || 3;
+  document.getElementById('rule-weekly-limit').value = btn.dataset.weeklyLimit || 1;
+  document.getElementById('rule-send-time').value = btn.dataset.sendTime || '10:00';
+  document.getElementById('rule-required-tag').value = btn.dataset.requiredTag || '';
+  document.getElementById('rule-text').value = btn.dataset.text || '';
+  document.getElementById('rule-existing-photo-path').value = btn.dataset.photoPath || '';
+  document.getElementById('rule-existing-photo-label').textContent = btn.dataset.photoPath ? `Текущее фото: ${btn.dataset.photoPath}` : '';
+
+  const container = document.getElementById('rule-buttons');
+  container.innerHTML = '';
+  let parsed = [];
+  try { parsed = JSON.parse(btn.dataset.buttons || '[]'); } catch (_) {}
+  parsed.flat().forEach((item) => {
+    if (item.url) {
+      addButtonRow('rule-buttons', item.text || '', item.url || '');
+    }
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function resetRuleForm() {
+  document.getElementById('rule-id-input').value = '';
+  document.getElementById('rule-scenario-ref').value = '';
+  document.getElementById('rule-delay-days').value = 3;
+  document.getElementById('rule-weekly-limit').value = 1;
+  document.getElementById('rule-send-time').value = '10:00';
+  document.getElementById('rule-required-tag').value = '';
+  document.getElementById('rule-text').value = '';
+  document.getElementById('rule-existing-photo-path').value = '';
+  document.getElementById('rule-existing-photo-label').textContent = '';
+  document.getElementById('rule-buttons').innerHTML = '';
+  const btn = document.getElementById('rule-submit-btn');
+  btn.disabled = false;
+  btn.textContent = 'Сохранить правило';
+}
+
+function showPreview() {
+  buildButtonsJson('broadcast');
+  const text = document.querySelector('textarea[name=\"text\"]').value;
+  const buttonsJson = document.getElementById('broadcast-buttons-json').value;
+  const previewText = document.getElementById('preview-text');
+  previewText.innerHTML = text ? markdownToHtml(text) : '(пусто)';
+  const wrap = document.getElementById('preview-buttons');
+  wrap.innerHTML = '';
+  if (buttonsJson) {
+    try {
+      const buttons = JSON.parse(buttonsJson).flat();
+      buttons.forEach((btn) => {
+        const el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = btn.text + ' → ' + (btn.url || '');
+        wrap.appendChild(el);
+      });
+    } catch (_) {}
+  }
+  document.getElementById('preview-modal').classList.remove('hidden');
+}
+
+function hidePreview() {
+  document.getElementById('preview-modal').classList.add('hidden');
+}
+</script>
+{% endblock %}
