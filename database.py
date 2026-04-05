@@ -65,6 +65,9 @@ class Database:
                     status TEXT NOT NULL DEFAULT 'pending',
                     timezone TEXT,
                     scheduled_at TEXT,
+                    segment_type TEXT,
+                    segment_value TEXT,
+                    segment_step_ref TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     sent_count INTEGER DEFAULT 0,
                     failed_count INTEGER DEFAULT 0,
@@ -141,6 +144,34 @@ class Database:
                     finished_at TIMESTAMP
                 );
 
+                CREATE TABLE IF NOT EXISTS segments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    scenario_ref TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS segment_campaign_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    segment_id INTEGER NOT NULL,
+                    delay_days INTEGER NOT NULL DEFAULT 3,
+                    weekly_limit INTEGER NOT NULL DEFAULT 1,
+                    send_time TEXT NOT NULL DEFAULT '10:00',
+                    message_text TEXT NOT NULL,
+                    buttons_json TEXT,
+                    photo_path TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS segment_campaign_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at);
                 CREATE INDEX IF NOT EXISTS idx_blacklist_user ON blacklist(user_id);
                 CREATE INDEX IF NOT EXISTS idx_user_tags_tag_user ON user_tags(tag, user_id);
@@ -149,6 +180,9 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_step_broadcast_log_rule_user_time ON step_broadcast_log(rule_id, user_id, sent_at);
                 CREATE INDEX IF NOT EXISTS idx_task_history_status_id ON task_history(status, id);
                 CREATE INDEX IF NOT EXISTS idx_broadcast_history_status_schedule ON broadcast_history(status, scheduled_at);
+                CREATE INDEX IF NOT EXISTS idx_segment_campaign_rules_segment_active ON segment_campaign_rules(segment_id, is_active);
+                CREATE INDEX IF NOT EXISTS idx_segments_active ON segments(is_active);
+                CREATE INDEX IF NOT EXISTS idx_segment_campaign_log_rule_user_time ON segment_campaign_log(rule_id, user_id, sent_at);
                 """
             )
             scenario_columns = {
@@ -187,6 +221,15 @@ class Database:
                 conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN required_tag TEXT")
             if "segment_name" not in rule_columns:
                 conn.execute("ALTER TABLE step_broadcast_rules ADD COLUMN segment_name TEXT")
+            broadcast_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(broadcast_history)").fetchall()
+            }
+            if "segment_type" not in broadcast_columns:
+                conn.execute("ALTER TABLE broadcast_history ADD COLUMN segment_type TEXT")
+            if "segment_value" not in broadcast_columns:
+                conn.execute("ALTER TABLE broadcast_history ADD COLUMN segment_value TEXT")
+            if "segment_step_ref" not in broadcast_columns:
+                conn.execute("ALTER TABLE broadcast_history ADD COLUMN segment_step_ref TEXT")
 
     def add_user(self, user_id: int, username: str | None) -> None:
         with self.connect() as conn:
@@ -466,15 +509,30 @@ class Database:
         photo_path: str | None,
         timezone: str | None,
         scheduled_at: str | None,
+        segment_type: str | None = None,
+        segment_value: str | None = None,
+        segment_step_ref: str | None = None,
         status: str = "pending",
     ) -> int:
         with self.connect() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO broadcast_history(message_text, buttons_json, photo_path, timezone, scheduled_at, status)
-                VALUES(?, ?, ?, ?, ?, ?)
+                INSERT INTO broadcast_history(
+                    message_text, buttons_json, photo_path, timezone, scheduled_at, segment_type, segment_value, segment_step_ref, status
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (message_text, buttons_json, photo_path, timezone, scheduled_at, status),
+                (
+                    message_text,
+                    buttons_json,
+                    photo_path,
+                    timezone,
+                    scheduled_at,
+                    segment_type,
+                    segment_value,
+                    segment_step_ref,
+                    status,
+                ),
             )
             return int(cur.lastrowid)
 
@@ -909,6 +967,173 @@ class Database:
                 (scenario_id, f"+{max(delay_days, 0)} day", f"-{max(delay_days, 0)} day"),
             ).fetchone()
         return str(row["next_trigger"]) if row and row["next_trigger"] else None
+
+    def upsert_segment(self, name: str, scenario_ref: str, segment_id: int | None = None) -> int:
+        with self.connect() as conn:
+            if segment_id:
+                conn.execute(
+                    "UPDATE segments SET name=?, scenario_ref=? WHERE id=?",
+                    (name.strip(), scenario_ref.strip(), segment_id),
+                )
+                return int(segment_id)
+            cur = conn.execute(
+                "INSERT INTO segments(name, scenario_ref, is_active) VALUES(?, ?, 1)",
+                (name.strip(), scenario_ref.strip()),
+            )
+            return int(cur.lastrowid)
+
+    def set_segment_active(self, segment_id: int, is_active: bool) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE segments SET is_active=? WHERE id=?", (1 if is_active else 0, segment_id))
+
+    def delete_segment(self, segment_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE segments SET is_active=0 WHERE id=?", (segment_id,))
+            conn.execute("UPDATE segment_campaign_rules SET is_active=0 WHERE segment_id=?", (segment_id,))
+
+    def get_segments(self, active_only: bool = False) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM segments"
+        params: list[Any] = []
+        if active_only:
+            sql += " WHERE is_active = 1"
+        sql += " ORDER BY id DESC"
+        with self.connect() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_segment_campaign_rule(
+        self,
+        segment_id: int,
+        delay_days: int,
+        weekly_limit: int,
+        send_time: str,
+        message_text: str,
+        buttons_json: str | None = None,
+        photo_path: str | None = None,
+        rule_id: int | None = None,
+    ) -> int:
+        with self.connect() as conn:
+            if rule_id:
+                conn.execute(
+                    """
+                    UPDATE segment_campaign_rules
+                    SET segment_id=?, delay_days=?, weekly_limit=?, send_time=?, message_text=?, buttons_json=?, photo_path=?
+                    WHERE id=?
+                    """,
+                    (
+                        segment_id,
+                        max(delay_days, 0),
+                        max(weekly_limit, 1),
+                        send_time.strip() or "10:00",
+                        message_text,
+                        buttons_json,
+                        photo_path,
+                        rule_id,
+                    ),
+                )
+                return int(rule_id)
+            cur = conn.execute(
+                """
+                INSERT INTO segment_campaign_rules(
+                    segment_id, delay_days, weekly_limit, send_time, message_text, buttons_json, photo_path, is_active
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    segment_id,
+                    max(delay_days, 0),
+                    max(weekly_limit, 1),
+                    send_time.strip() or "10:00",
+                    message_text,
+                    buttons_json,
+                    photo_path,
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def get_segment_campaign_rules(self, active_only: bool = True) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if active_only:
+                rows = conn.execute(
+                    """
+                    SELECT r.*, s.name AS segment_name, s.scenario_ref, s.is_active AS segment_is_active
+                    FROM segment_campaign_rules r
+                    JOIN segments s ON s.id = r.segment_id
+                    WHERE r.is_active = 1 AND s.is_active = 1
+                    ORDER BY r.id DESC
+                    """
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT r.*, s.name AS segment_name, s.scenario_ref, s.is_active AS segment_is_active
+                    FROM segment_campaign_rules r
+                    JOIN segments s ON s.id = r.segment_id
+                    ORDER BY r.id DESC
+                    """
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_segment_campaign_rule_active(self, rule_id: int, is_active: bool) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE segment_campaign_rules SET is_active=? WHERE id=?", (1 if is_active else 0, rule_id))
+
+    def get_users_due_for_segment_campaign_rule(
+        self,
+        rule_id: int,
+        scenario_id: int,
+        delay_days: int,
+        weekly_limit: int,
+        send_time: str = "00:00",
+    ) -> list[int]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH latest_visit AS (
+                    SELECT user_id, MAX(visited_at) AS last_visit
+                    FROM user_step_visits
+                    WHERE scenario_id = ?
+                    GROUP BY user_id
+                )
+                SELECT lv.user_id
+                FROM latest_visit lv
+                WHERE lv.user_id NOT IN (SELECT user_id FROM blacklist)
+                  AND datetime(lv.last_visit) <= datetime('now', ?)
+                  AND strftime('%H:%M', 'now', 'localtime') >= ?
+                  AND (
+                      SELECT COUNT(*)
+                      FROM segment_campaign_log scl
+                      WHERE scl.rule_id = ? AND scl.user_id = lv.user_id
+                        AND datetime(scl.sent_at) >= datetime('now', '-7 day')
+                  ) < ?
+                  AND (
+                      (
+                          SELECT MAX(scl2.sent_at)
+                          FROM segment_campaign_log scl2
+                          WHERE scl2.rule_id = ? AND scl2.user_id = lv.user_id
+                      ) IS NULL
+                      OR datetime((
+                          SELECT MAX(scl3.sent_at)
+                          FROM segment_campaign_log scl3
+                          WHERE scl3.rule_id = ? AND scl3.user_id = lv.user_id
+                      )) < datetime(lv.last_visit)
+                  )
+                """,
+                (
+                    scenario_id,
+                    f"-{max(delay_days, 0)} day",
+                    send_time or "00:00",
+                    rule_id,
+                    max(weekly_limit, 1),
+                    rule_id,
+                    rule_id,
+                ),
+            ).fetchall()
+        return [int(r["user_id"]) for r in rows]
+
+    def log_segment_campaign_delivery(self, rule_id: int, user_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute("INSERT INTO segment_campaign_log(rule_id, user_id) VALUES(?, ?)", (rule_id, user_id))
 
     def create_task(self, task_type: str, payload: dict[str, Any] | None = None, message: str | None = None) -> int:
         with self.connect() as conn:

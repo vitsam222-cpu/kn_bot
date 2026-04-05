@@ -270,6 +270,9 @@ async def broadcast(
             photo_path=photo_path,
             timezone=timezone,
             scheduled_at=schedule_utc,
+            segment_type=segment_type.strip() or "all",
+            segment_value=segment_value.strip() or None,
+            segment_step_ref=segment_step_ref.strip() or None,
             status="pending",
         )
         msg = "Рассылка запланирована"
@@ -285,6 +288,9 @@ async def broadcast(
             photo_path=photo_path,
             timezone=timezone,
             scheduled_at=None,
+            segment_type=segment_type.strip() or "all",
+            segment_value=segment_value.strip() or None,
+            segment_step_ref=segment_step_ref.strip() or None,
             status="running",
         )
         db.create_task(
@@ -370,7 +376,11 @@ async def start_scheduler() -> None:
                 pending = db.get_pending_broadcasts()
                 for item in pending:
                     db.update_broadcast_status(item["id"], status="running")
-                    user_ids = db.get_active_user_ids()
+                    user_ids = db.get_segment_user_ids(
+                        segment_type=str(item.get("segment_type") or "all"),
+                        segment_value=(item.get("segment_value") or None),
+                        scenario_ref=(item.get("segment_step_ref") or None),
+                    )
                     result = await send_broadcast(
                         item["message_text"],
                         user_ids,
@@ -406,6 +416,30 @@ async def start_scheduler() -> None:
                         )
                         if result["sent"] > 0:
                             db.log_step_rule_delivery(int(rule["id"]), int(user_id))
+
+                segment_rules = db.get_segment_campaign_rules(active_only=True)
+                for rule in segment_rules:
+                    scenario_id = db.resolve_scenario_ref(str(rule.get("scenario_ref", "")).strip())
+                    if not scenario_id:
+                        continue
+                    due_user_ids = db.get_users_due_for_segment_campaign_rule(
+                        rule_id=int(rule["id"]),
+                        scenario_id=scenario_id,
+                        delay_days=int(rule.get("delay_days") or 0),
+                        weekly_limit=int(rule.get("weekly_limit") or 1),
+                        send_time=str(rule.get("send_time") or "00:00"),
+                    )
+                    for user_id in due_user_ids:
+                        result = await send_broadcast(
+                            text=rule["message_text"],
+                            user_ids=[user_id],
+                            buttons_json=rule.get("buttons_json"),
+                            photo=None,
+                            photo_path=rule.get("photo_path"),
+                            rule_id=int(rule["id"]),
+                        )
+                        if result["sent"] > 0:
+                            db.log_segment_campaign_delivery(int(rule["id"]), int(user_id))
 
                 queued = db.get_queued_tasks(limit=20)
                 for task in queued:
@@ -578,7 +612,7 @@ async def users_page(request: Request):
     for user in users:
         user["tags"] = tags_map.get(int(user["user_id"]), [])
     stats = db.get_stats()
-    segments = db.get_step_broadcast_rules(active_only=False)
+    segments = db.get_segments(active_only=False)
     return render_template(
         request=request,
         name="users.html",
@@ -592,6 +626,7 @@ async def users_page(request: Request):
             "filter_step_ref": step_ref or "",
             "flash_msg": request.query_params.get("msg"),
             "segments": segments,
+            "segment_rules": db.get_segment_campaign_rules(active_only=False),
         },
     )
 
@@ -647,6 +682,7 @@ async def tag_user(request: Request, user_id: int = Form(...), tag: str = Form(.
 async def save_user_segment(
     request: Request,
     segment_id: int | None = Form(None),
+    segment_rule_id: int | None = Form(None),
     segment_name: str = Form(""),
     step_ref: str = Form(...),
     delay_days: int = Form(3),
@@ -656,19 +692,38 @@ async def save_user_segment(
 ):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
-    db.upsert_step_broadcast_rule(
-        rule_id=segment_id,
-        segment_name=segment_name.strip() or None,
+    normalized_name = segment_name.strip() or f"Сегмент {step_ref.strip()}"
+    segment_db_id = db.upsert_segment(
+        name=normalized_name,
         scenario_ref=step_ref.strip(),
+        segment_id=segment_id,
+    )
+    db.upsert_segment_campaign_rule(
+        rule_id=segment_rule_id,
+        segment_id=segment_db_id,
         delay_days=max(delay_days, 0),
         weekly_limit=max(weekly_limit, 1),
         send_time=send_time.strip() or "10:00",
-        required_tag=None,
         message_text=text.strip(),
-        buttons_json=None,
-        photo_path=None,
     )
     msg = "Сегмент обновлен" if segment_id else "Сегмент создан"
+    return RedirectResponse(f"/users?msg={quote_plus(msg)}", status_code=302)
+
+
+@app.post("/users/segment/delete")
+async def delete_user_segment(request: Request, segment_id: int = Form(...)):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    db.delete_segment(segment_id)
+    return RedirectResponse(f"/users?msg={quote_plus('Сегмент удален')}", status_code=302)
+
+
+@app.post("/users/segment/toggle")
+async def toggle_user_segment(request: Request, segment_id: int = Form(...), is_active: int = Form(...)):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    db.set_segment_active(segment_id, bool(is_active))
+    msg = "Сегмент активирован" if is_active else "Сегмент поставлен на паузу"
     return RedirectResponse(f"/users?msg={quote_plus(msg)}", status_code=302)
 
 
