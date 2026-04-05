@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Профиль пользователя {{ user.user_id }}</h1>
+<div class="card">
+  <p><strong>Username:</strong> @{{ user.username or '-' }}</p>
+  <p><strong>Создан:</strong> {{ user.created_at }}</p>
+  <p><strong>Последний контакт:</strong> {{ user.last_seen_at or '-' }}</p>
+  <p><strong>Статус:</strong> {{ 'Забанен' if user.is_banned else 'Активен' }}</p>
+  <p><strong>Теги:</strong>
+    {% if tags %}
+      {% for t in tags %}<span class="chip">{{ t }}</span>{% endfor %}
+    {% else %}
+      -
+    {% endif %}
+  </p>
+</div>
+
+<div class="card">
+  <h2>История действий/сообщений</h2>
+  <table>
+    <tr><th>Дата</th><th>Событие</th><th>Payload</th></tr>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.created_at }}</td>
+      <td>{{ e.event_type }}</td>
+      <td><code>{{ e.payload or '-' }}</code></td>
+    </tr>
+    {% endfor %}
+    {% if not events %}
+    <tr><td colspan="3">Нет событий</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Timeline шагов</h2>
+  <table>
+    <tr><th>Дата</th><th>Шаг ID</th><th>Триггер</th></tr>
+    {% for v in visits %}
+    <tr>
+      <td>{{ v.visited_at }}</td>
+      <td>{{ v.scenario_id }}</td>
+      <td>{{ v.trigger_text or '-' }}</td>
+    </tr>
+    {% endfor %}
+    {% if not visits %}
+    <tr><td colspan="3">Нет посещений шагов</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Timeline рассылок</h2>
+  <table>
+    <tr><th>Дата</th><th>Статус</th><th>Broadcast ID</th><th>Rule ID</th><th>Текст</th><th>Ошибка</th></tr>
+    {% for d in deliveries %}
+    <tr>
+      <td>{{ d.sent_at }}</td>
+      <td>{{ d.status }}</td>
+      <td>{{ d.broadcast_id or '-' }}</td>
+      <td>{{ d.rule_id or '-' }}</td>
+      <td>{{ d.message_text[:80] }}{% if d.message_text|length > 80 %}...{% endif %}</td>
+      <td>{{ d.error_text or '-' }}</td>
+    </tr>
+    {% endfor %}
+    {% if not deliveries %}
+    <tr><td colspan="6">Нет отправок</td></tr>
+    {% endif %}
+  </table>
+</div>
+<a class="btn" href="/users">← Назад к пользователям</a>
+{% endblock %}

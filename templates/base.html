@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "KN Admin" }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="page-loader" class="page-loader hidden">Загрузка…</div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">Кадровый Навигатор</div>
+      <nav class="nav-links">
+        <a data-nav href="/dashboard">Дашборд</a>
+        <a data-nav href="/scenarios">Сценарии</a>
+        <a data-nav href="/users">Пользователи</a>
+        <a data-nav href="/tasks">Задачи{% if tasks_pending_count %} ({{ tasks_pending_count }}){% endif %}</a>
+        <a href="/logout">Выход</a>
+      </nav>
+    </aside>
+    <section class="content-wrap">
+      <main id="main-content">{% block content %}{% endblock %}</main>
+    </section>
+  </div>
+  <script>
+    const loader = document.getElementById('page-loader');
+
+    function setActiveNav(pathname) {
+      document.querySelectorAll('[data-nav]').forEach((link) => {
+        link.classList.toggle('active', link.getAttribute('href') === pathname);
+      });
+    }
+
+    document.querySelectorAll('[data-nav]').forEach((link) => {
+      link.addEventListener('click', (event) => {
+        if (link.getAttribute('href') !== window.location.pathname) {
+          loader.classList.remove('hidden');
+        }
+      });
+    });
+    setActiveNav(window.location.pathname);
+  </script>
+</body>
+</html>
