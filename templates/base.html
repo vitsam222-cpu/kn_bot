@@ -33,13 +33,90 @@
     }
 
     document.querySelectorAll('[data-nav]').forEach((link) => {
-      link.addEventListener('click', (event) => {
+      link.addEventListener('click', () => {
         if (link.getAttribute('href') !== window.location.pathname) {
           loader.classList.remove('hidden');
         }
       });
     });
+
+    function markdownToHtml(text) {
+      const escaped = (text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+      return escaped
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.+?)__/g, '<u>$1</u>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/~~(.+?)~~/g, '<s>$1</s>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+    }
+
+    function wrapSelection(textarea, left, right = left) {
+      const value = textarea.value || '';
+      const start = textarea.selectionStart ?? 0;
+      const end = textarea.selectionEnd ?? start;
+      const selected = value.slice(start, end) || 'текст';
+      textarea.value = value.slice(0, start) + left + selected + right + value.slice(end);
+      textarea.focus();
+      textarea.selectionStart = start + left.length;
+      textarea.selectionEnd = start + left.length + selected.length;
+      textarea.dispatchEvent(new Event('input'));
+    }
+
+    function setupMarkdownEditors() {
+      document.querySelectorAll('textarea[data-markdown="true"]').forEach((textarea) => {
+        if (textarea.dataset.mdReady === '1') return;
+        textarea.dataset.mdReady = '1';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'markdown-editor';
+        const toolbar = document.createElement('div');
+        toolbar.className = 'md-toolbar';
+        const preview = document.createElement('div');
+        preview.className = 'md-preview';
+
+        const controls = [
+          { label: 'B', left: '**', right: '**', title: 'Жирный' },
+          { label: 'I', left: '*', right: '*', title: 'Курсив' },
+          { label: 'U', left: '__', right: '__', title: 'Подчеркнутый' },
+          { label: 'S', left: '~~', right: '~~', title: 'Зачеркнутый' },
+          { label: '</>', left: '`', right: '`', title: 'Код' },
+          { label: '🔗', left: '[', right: '](https://example.com)', title: 'Ссылка' },
+        ];
+
+        controls.forEach((c) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = c.label;
+          btn.title = c.title;
+          btn.className = 'btn-secondary';
+          btn.addEventListener('click', () => wrapSelection(textarea, c.left, c.right));
+          toolbar.appendChild(btn);
+        });
+
+        const help = document.createElement('small');
+        help.textContent = 'Подсказка: **жирный**, *курсив*, __подчеркнутый__, ~~зачеркнутый~~, `код`.';
+        help.style.marginLeft = '8px';
+        toolbar.appendChild(help);
+
+        textarea.parentNode.insertBefore(wrapper, textarea);
+        wrapper.appendChild(toolbar);
+        wrapper.appendChild(textarea);
+        wrapper.appendChild(preview);
+
+        const renderPreview = () => {
+          const raw = textarea.value || '';
+          preview.innerHTML = raw.trim() ? markdownToHtml(raw) : '<span class="muted">Превью форматирования...</span>';
+        };
+        textarea.addEventListener('input', renderPreview);
+        renderPreview();
+      });
+    }
+
     setActiveNav(window.location.pathname);
+    setupMarkdownEditors();
   </script>
 </body>
 </html>

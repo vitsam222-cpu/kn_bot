@@ -51,10 +51,11 @@ def build_keyboard(buttons_json: str | None) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=keyboard) if keyboard else None
 
 
-async def send_scenario_message(message: Message, scenario: dict) -> None:
+async def send_scenario_message(message: Message, scenario: dict, user_id: int | None = None) -> None:
+    resolved_user_id = user_id or (message.from_user.id if message.from_user else message.chat.id)
     scenario_id = int(scenario["id"])
-    db.increment_scenario_visit(scenario_id, user_id=message.from_user.id)
-    db.add_user_tag(message.from_user.id, f"step_{scenario_id}")
+    db.increment_scenario_visit(scenario_id, user_id=resolved_user_id)
+    db.add_user_tag(resolved_user_id, f"step_{scenario_id}")
     markup = build_keyboard(scenario.get("buttons_json"))
     image_path = scenario.get("scenario_image_path")
     if image_path and Path(image_path).exists():
@@ -80,7 +81,7 @@ async def start_command(message: Message) -> None:
     db.add_user_event(message.from_user.id, "command_start", "/start")
     start_scenario = db.get_scenario_by_trigger("/start")
     if start_scenario:
-        await send_scenario_message(message, start_scenario)
+        await send_scenario_message(message, start_scenario, user_id=message.from_user.id)
         return
     await message.answer("Добро пожаловать в Кадровый Навигатор! Напишите команду или триггер.")
 
@@ -95,7 +96,7 @@ async def process_text_message(message: Message) -> None:
     db.add_user_event(user_id, "incoming_text", message.text)
     scenario = db.get_scenario_by_trigger(message.text)
     if scenario:
-        await send_scenario_message(message, scenario)
+        await send_scenario_message(message, scenario, user_id=user_id)
         return
 
     if message.text.strip() == "/start":
@@ -123,7 +124,7 @@ async def process_step_callback(callback: CallbackQuery) -> None:
         return
 
     db.add_user_event(callback.from_user.id, "callback_step", callback.data)
-    await send_scenario_message(callback.message, scenario)
+    await send_scenario_message(callback.message, scenario, user_id=callback.from_user.id)
     await callback.answer()
 
 
@@ -145,7 +146,7 @@ async def process_stepref_callback(callback: CallbackQuery) -> None:
         return
 
     db.add_user_event(callback.from_user.id, "callback_stepref", callback.data)
-    await send_scenario_message(callback.message, scenario)
+    await send_scenario_message(callback.message, scenario, user_id=callback.from_user.id)
     await callback.answer()
 
 

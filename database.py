@@ -139,6 +139,15 @@ class Database:
                     started_at TIMESTAMP,
                     finished_at TIMESTAMP
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at);
+                CREATE INDEX IF NOT EXISTS idx_blacklist_user ON blacklist(user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_tags_tag_user ON user_tags(tag, user_id);
+                CREATE INDEX IF NOT EXISTS idx_user_step_visits_scenario_user_time ON user_step_visits(scenario_id, user_id, visited_at);
+                CREATE INDEX IF NOT EXISTS idx_user_step_visits_user_time ON user_step_visits(user_id, visited_at);
+                CREATE INDEX IF NOT EXISTS idx_step_broadcast_log_rule_user_time ON step_broadcast_log(rule_id, user_id, sent_at);
+                CREATE INDEX IF NOT EXISTS idx_task_history_status_id ON task_history(status, id);
+                CREATE INDEX IF NOT EXISTS idx_broadcast_history_status_schedule ON broadcast_history(status, scheduled_at);
                 """
             )
             scenario_columns = {
@@ -328,6 +337,21 @@ class Database:
                 """
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def get_user_with_status(self, user_id: int) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT u.user_id, u.username, u.created_at, u.last_seen_at,
+                       CASE WHEN b.user_id IS NULL THEN 0 ELSE 1 END AS is_banned
+                FROM users u
+                LEFT JOIN blacklist b ON u.user_id = b.user_id
+                WHERE u.user_id = ?
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        return dict(row) if row else None
 
     def get_users_filtered(
         self, tag: str | None = None, activity: str | None = None, scenario_id: int | None = None
@@ -902,8 +926,9 @@ class Database:
 
     def add_tag_to_filtered_users(self, tag: str, activity: str | None = None, scenario_id: int | None = None) -> int:
         users = self.get_users_filtered(tag=None, activity=activity, scenario_id=scenario_id)
-        count = 0
-        for u in users:
-            self.add_user_tag(int(u["user_id"]), tag)
-            count += 1
-        return count
+        payload = [(int(u["user_id"]), tag.strip()) for u in users if tag.strip()]
+        if not payload:
+            return 0
+        with self.connect() as conn:
+            conn.executemany("INSERT OR IGNORE INTO user_tags(user_id, tag) VALUES(?, ?)", payload)
+        return len(payload)

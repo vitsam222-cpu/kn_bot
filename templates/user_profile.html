@@ -17,6 +17,7 @@
 
 <div class="card">
   <h2>История действий/сообщений</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>Дата</th><th>Событие</th><th>Payload</th></tr>
     {% for e in events %}
@@ -30,10 +31,12 @@
     <tr><td colspan="3">Нет событий</td></tr>
     {% endif %}
   </table>
+  </div>
 </div>
 
 <div class="card">
   <h2>Timeline шагов</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>Дата</th><th>Шаг ID</th><th>Триггер</th></tr>
     {% for v in visits %}
@@ -47,10 +50,12 @@
     <tr><td colspan="3">Нет посещений шагов</td></tr>
     {% endif %}
   </table>
+  </div>
 </div>
 
 <div class="card">
   <h2>Timeline рассылок</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>Дата</th><th>Статус</th><th>Broadcast ID</th><th>Rule ID</th><th>Текст</th><th>Ошибка</th></tr>
     {% for d in deliveries %}
@@ -67,6 +72,7 @@
     <tr><td colspan="6">Нет отправок</td></tr>
     {% endif %}
   </table>
+  </div>
 </div>
 <a class="btn" href="/users">← Назад к пользователям</a>
 {% endblock %}

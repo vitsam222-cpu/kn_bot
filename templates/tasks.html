@@ -2,6 +2,7 @@
 {% block content %}
 <h1>История задач</h1>
 <div class="card">
+  <div class="table-wrap">
   <table>
     <tr><th>ID</th><th>Тип</th><th>Статус</th><th>Сообщение</th><th>Создана</th><th>Старт</th><th>Финиш</th></tr>
     {% for t in tasks %}
@@ -19,5 +20,6 @@
     <tr><td colspan="7">Пока нет задач.</td></tr>
     {% endif %}
   </table>
+  </div>
 </div>
 {% endblock %}

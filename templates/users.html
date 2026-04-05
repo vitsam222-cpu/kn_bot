@@ -8,7 +8,7 @@
   <div class="card">DAU (24ч): <strong>{{ dau }}</strong></div>
   <div class="card">WAU (7д): <strong>{{ wau }}</strong></div>
 </div>
-<form method="get" action="/users" class="card">
+<form method="get" action="/users" class="card filters-stack">
   <h3>Фильтры пользователей</h3>
   <label>Тег:
     <input type="text" name="tag" value="{{ filter_tag }}" list="tags-list" placeholder="например, vip" />
@@ -34,13 +34,16 @@
       {% endfor %}
     </datalist>
   </label>
-  <button type="submit">Применить</button>
+  <div class="form-actions">
+    <button type="submit">Применить</button>
+    <a class="btn btn-secondary" href="/users">Сбросить</a>
+  </div>
 </form>
 
 <a class="btn" href="/users/export?tag={{ filter_tag }}&activity={{ filter_activity }}&step_ref={{ filter_step_ref }}">Скачать CSV (по фильтрам)</a>
 <div class="card">
   <h3>Конструктор тегов (массово)</h3>
-  <form method="post" action="/users/tags/bulk">
+  <form method="post" action="/users/tags/bulk" class="filters-stack">
     <input type="text" name="tag" placeholder="Тег для присвоения" required />
     <select name="activity">
       <option value="">Без фильтра активности</option>
@@ -53,7 +56,7 @@
 </div>
 <div class="card">
   <h3>Импорт whitelist/blacklist</h3>
-  <form method="post" action="/users/import-list" enctype="multipart/form-data">
+  <form method="post" action="/users/import-list" enctype="multipart/form-data" class="filters-stack">
     <select name="mode">
       <option value="blacklist">Импорт в blacklist</option>
       <option value="whitelist">Импорт в whitelist (разбан)</option>
@@ -62,6 +65,7 @@
     <button type="submit">Импортировать</button>
   </form>
 </div>
+<div class="table-wrap">
 <table>
   <tr><th>User ID</th><th>Username</th><th>Дата</th><th>Последний контакт</th><th>Статус</th><th>Действие</th></tr>
   {% for u in users %}
@@ -93,4 +97,5 @@
   </tr>
   {% endfor %}
 </table>
+</div>
 {% endblock %}

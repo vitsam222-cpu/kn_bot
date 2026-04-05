@@ -601,8 +601,8 @@ async def toggle_ban(request: Request, user_id: int = Form(...), banned: int = F
 async def user_profile(request: Request, user_id: int):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
-    users = [u for u in db.get_users_with_status() if u["user_id"] == user_id]
-    if not users:
+    user = db.get_user_with_status(user_id)
+    if not user:
         return RedirectResponse("/users", status_code=302)
     events = db.get_user_events(user_id)
     visits = db.get_user_step_visits(user_id)
@@ -610,7 +610,7 @@ async def user_profile(request: Request, user_id: int):
     return render_template(
         request=request,
         name="user_profile.html",
-        context={"user": users[0], "events": events, "visits": visits, "deliveries": deliveries, "tags": db.get_user_tags(user_id)},
+        context={"user": user, "events": events, "visits": visits, "deliveries": deliveries, "tags": db.get_user_tags(user_id)},
     )
 
 

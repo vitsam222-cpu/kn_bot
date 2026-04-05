@@ -16,13 +16,13 @@
 <div class="card">
   <h2>Рассылка</h2>
   <form method="post" action="/broadcast" enctype="multipart/form-data" onsubmit="return onBroadcastSubmit(event)">
-    <textarea name="text" placeholder="Текст сообщения (поддерживается Markdown)" required></textarea>
+    <textarea data-markdown="true" name="text" placeholder="Текст сообщения (поддерживается Markdown)" required></textarea>
     <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
 
     <h3>Кнопки</h3>
     <div id="broadcast-buttons"></div>
     <div class="button-row-actions">
-      <button type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
+      <button class="btn-secondary" type="button" onclick="addButtonRow('broadcast-buttons')">+ Добавить кнопку</button>
     </div>
     <input id="broadcast-buttons-json" type="hidden" name="buttons_json" />
     <label>Отложить до:
@@ -47,14 +47,16 @@
     <input type="text" name="segment_value" placeholder="Тег (для сегмента tag)" />
     <input type="text" name="segment_step_ref" placeholder="Шаг ID/тег (для сегмента step)" />
 
-    <button type="button" onclick="showPreview()">Превью</button>
-
-    <button id="broadcast-submit-btn" type="submit">Отправить</button>
+    <div class="form-actions">
+      <button class="btn-secondary" type="button" onclick="showPreview()">Превью</button>
+      <button id="broadcast-submit-btn" type="submit">Отправить</button>
+    </div>
   </form>
 </div>
 
 <div class="card">
   <h2>История рассылок</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>ID</th><th>Время</th><th>Статус</th><th>План</th><th>Отправлено</th><th>Ошибки</th><th>Текст</th></tr>
     {% for b in broadcast_history %}
@@ -69,6 +71,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 
 <div class="card">
@@ -97,23 +100,26 @@
     <label>Только пользователи с тегом (опционально):
       <input type="text" name="required_tag" id="rule-required-tag" placeholder="например, warm_lead" />
     </label>
-    <textarea name="text" id="rule-text" placeholder="Текст автосообщения (Markdown)" required></textarea>
+    <textarea data-markdown="true" name="text" id="rule-text" placeholder="Текст автосообщения (Markdown)" required></textarea>
     <label>Фото: <input type="file" name="photo" accept="image/*" /></label>
     <small id="rule-existing-photo-label"></small>
 
     <h3>Кнопки автосообщения</h3>
     <div id="rule-buttons"></div>
     <div class="button-row-actions">
-      <button type="button" onclick="addButtonRow('rule-buttons')">+ Добавить кнопку</button>
+      <button class="btn-secondary" type="button" onclick="addButtonRow('rule-buttons')">+ Добавить кнопку</button>
     </div>
     <input id="rule-buttons-json" type="hidden" name="buttons_json" />
-    <button id="rule-submit-btn" type="submit">Сохранить правило</button>
-    <button type="button" onclick="resetRuleForm()">Новое правило</button>
+    <div class="form-actions">
+      <button id="rule-submit-btn" type="submit">Сохранить правило</button>
+      <button class="btn-secondary" type="button" onclick="resetRuleForm()">Новое правило</button>
+    </div>
   </form>
 </div>
 
 <div class="card">
   <h2>Правила автодожима</h2>
+  <div class="table-wrap">
   <table>
     <tr><th>ID</th><th>Шаг ref</th><th>Задержка (дни)</th><th>Лимит / 7 дней</th><th>Время</th><th>Тег-условие</th><th>Статус</th><th>След. срабатывание</th><th>Текст</th><th>Попадают сейчас</th><th></th></tr>
     {% for r in drip_rules %}
@@ -166,6 +172,7 @@
     </tr>
     {% endfor %}
   </table>
+  </div>
 </div>
 </div>
 
@@ -174,7 +181,7 @@
     <h3>Превью рассылки</h3>
     <p id="preview-text"></p>
     <div id="preview-buttons"></div>
-    <button type="button" onclick="hidePreview()">Закрыть</button>
+    <button class="btn-secondary" type="button" onclick="hidePreview()">Закрыть</button>
   </div>
 </div>
 
@@ -265,7 +272,8 @@ function showPreview() {
   buildButtonsJson('broadcast');
   const text = document.querySelector('textarea[name=\"text\"]').value;
   const buttonsJson = document.getElementById('broadcast-buttons-json').value;
-  document.getElementById('preview-text').textContent = text || '(пусто)';
+  const previewText = document.getElementById('preview-text');
+  previewText.innerHTML = text ? markdownToHtml(text) : '(пусто)';
   const wrap = document.getElementById('preview-buttons');
   wrap.innerHTML = '';
   if (buttonsJson) {
