@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "KN Admin" }}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div id="page-loader" class="page-loader hidden">Загрузка…</div>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">Кадровый Навигатор</div>
+      <nav class="nav-links">
+        <a data-nav href="/dashboard">Дашборд</a>
+        <a data-nav href="/scenarios">Сценарии</a>
+        <a data-nav href="/users">Пользователи</a>
+        <a data-nav href="/segments">Сегменты</a>
+        <a data-nav href="/tasks">Задачи{% if tasks_pending_count %} ({{ tasks_pending_count }}){% endif %}</a>
+        <a href="/logout">Выход</a>
+      </nav>
+    </aside>
+    <section class="content-wrap">
+      <main id="main-content">{% block content %}{% endblock %}</main>
+    </section>
+  </div>
+  <script>
+    const loader = document.getElementById('page-loader');
+
+    function setActiveNav(pathname) {
+      document.querySelectorAll('[data-nav]').forEach((link) => {
+        link.classList.toggle('active', link.getAttribute('href') === pathname);
+      });
+    }
+
+    document.querySelectorAll('[data-nav]').forEach((link) => {
+      link.addEventListener('click', () => {
+        if (link.getAttribute('href') !== window.location.pathname) {
+          loader.classList.remove('hidden');
+        }
+      });
+    });
+
+    function markdownToHtml(text) {
+      const escaped = (text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+      return escaped
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.+?)__/g, '<u>$1</u>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/~~(.+?)~~/g, '<s>$1</s>')
+        .replace(/`(.+?)`/g, '<code>$1</code>');
+    }
+
+    function wrapSelection(textarea, left, right = left) {
+      const value = textarea.value || '';
+      const start = textarea.selectionStart ?? 0;
+      const end = textarea.selectionEnd ?? start;
+      const selected = value.slice(start, end) || 'текст';
+      textarea.value = value.slice(0, start) + left + selected + right + value.slice(end);
+      textarea.focus();
+      textarea.selectionStart = start + left.length;
+      textarea.selectionEnd = start + left.length + selected.length;
+      textarea.dispatchEvent(new Event('input'));
+    }
+
+    function setupMarkdownEditors() {
+      document.querySelectorAll('textarea[data-markdown="true"]').forEach((textarea) => {
+        if (textarea.dataset.mdReady === '1') return;
+        textarea.dataset.mdReady = '1';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'markdown-editor';
+        const toolbar = document.createElement('div');
+        toolbar.className = 'md-toolbar';
+        const preview = document.createElement('div');
+        preview.className = 'md-preview';
+
+        const controls = [
+          { label: 'B', left: '**', right: '**', title: 'Жирный' },
+          { label: 'I', left: '*', right: '*', title: 'Курсив' },
+          { label: 'U', left: '__', right: '__', title: 'Подчеркнутый' },
+          { label: 'S', left: '~~', right: '~~', title: 'Зачеркнутый' },
+          { label: '</>', left: '`', right: '`', title: 'Код' },
+          { label: '🔗', left: '[', right: '](https://example.com)', title: 'Ссылка' },
+        ];
+
+        controls.forEach((c) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = c.label;
+          btn.title = c.title;
+          btn.className = 'btn-secondary';
+          btn.addEventListener('click', () => wrapSelection(textarea, c.left, c.right));
+          toolbar.appendChild(btn);
+        });
+
+        const help = document.createElement('small');
+        help.textContent = 'Подсказка: **жирный**, *курсив*, __подчеркнутый__, ~~зачеркнутый~~, `код`.';
+        help.style.marginLeft = '8px';
+        toolbar.appendChild(help);
+
+        textarea.parentNode.insertBefore(wrapper, textarea);
+        wrapper.appendChild(toolbar);
+        wrapper.appendChild(textarea);
+        wrapper.appendChild(preview);
+
+        const renderPreview = () => {
+          const raw = textarea.value || '';
+          preview.innerHTML = raw.trim() ? markdownToHtml(raw) : '<span class="muted">Превью форматирования...</span>';
+        };
+        textarea.addEventListener('input', renderPreview);
+        renderPreview();
+      });
+    }
+
+    setActiveNav(window.location.pathname);
+    setupMarkdownEditors();
+  </script>
+</body>
+</html>
