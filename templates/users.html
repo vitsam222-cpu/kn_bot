@@ -76,17 +76,14 @@
     <td>{{ u.last_seen_at or "-" }}</td>
     <td>{{ "Забанен" if u.is_banned else "Активен" }}</td>
     <td>
-      <form method="post" action="/users/tag">
+      <form method="post" action="/users/tag" class="filters-stack">
         <input type="hidden" name="user_id" value="{{ u.user_id }}" />
-        <input type="text" name="tag" placeholder="тег" />
-        <input type="hidden" name="action" value="add" />
-        <button type="submit">+Тег</button>
-      </form>
-      <form method="post" action="/users/tag">
-        <input type="hidden" name="user_id" value="{{ u.user_id }}" />
-        <input type="text" name="tag" placeholder="тег" />
-        <input type="hidden" name="action" value="remove" />
-        <button type="submit">-Тег</button>
+        <input type="text" name="tag" placeholder="Введите тег" />
+        <select name="action">
+          <option value="add">Добавить тег</option>
+          <option value="remove">Удалить тег</option>
+        </select>
+        <button type="submit">Применить тег</button>
       </form>
       <form method="post" action="/users/toggle-ban">
         <input type="hidden" name="user_id" value="{{ u.user_id }}" />
