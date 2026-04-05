@@ -100,8 +100,8 @@
             '{{ s.scenario_ref|e }}',
             '{{ (rule.delay_days if rule else 3) }}',
             '{{ (rule.weekly_limit if rule else 1) }}',
-            '{{ (rule.send_time if rule else \"10:00\") }}',
-            '{{ (rule.message_text if rule else \"\")|e }}'
+            '{{ (rule.send_time if rule else "10:00") }}',
+            '{{ (rule.message_text if rule else "")|e }}'
           )">Редактировать</button>
           <form method="post" action="/users/segment/toggle" style="display:inline">
             <input type="hidden" name="segment_id" value="{{ s.id }}" />
