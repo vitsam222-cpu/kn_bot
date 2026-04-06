@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Логи ошибок</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
+<div class="card">
+  <p class="muted">Показываются последние 500 ошибок с датой/временем, источником и stack trace.</p>
+  <div class="table-wrap">
+    <table>
+      <tr><th>ID</th><th>Дата/время</th><th>Источник</th><th>Ошибка</th><th>Детали</th></tr>
+      {% for row in logs %}
+      <tr>
+        <td>{{ row.id }}</td>
+        <td>{{ row.created_at }}</td>
+        <td>{{ row.source }}</td>
+        <td>{{ row.message }}</td>
+        <td><code>{{ row.details or '-' }}</code></td>
+      </tr>
+      {% endfor %}
+      {% if not logs %}
+      <tr><td colspan="5">Ошибок пока нет.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

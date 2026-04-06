@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Сегменты</h1>
+{% if flash_msg %}
+<div class="card success-msg">{{ flash_msg }}</div>
+{% endif %}
+<div class="card">
+  <h3>Сегменты автодожима по шагам</h3>
+  <form method="post" action="/users/segment/save" class="filters-stack">
+    <input type="hidden" name="segment_id" id="segment-id-input" />
+    <input type="hidden" name="segment_rule_id" id="segment-rule-id-input" />
+    <input type="text" name="segment_name" placeholder="Название сегмента (например: Шаг 2 — Лиды)" />
+    <input type="text" name="step_ref" list="steps-list" placeholder="ID шага для автодобавления пользователей" required />
+    <datalist id="steps-list">
+      {% for sc in scenarios %}
+      <option value="{{ sc.id }}">{{ sc.trigger_text }}</option>
+      <option value="{{ sc.trigger_text }}">{{ sc.id }}</option>
+      {% endfor %}
+    </datalist>
+    <input type="number" name="delay_days" min="0" value="3" placeholder="Через сколько дней отправить" required />
+    <input type="number" name="weekly_limit" min="1" value="1" placeholder="Сколько раз за неделю" required />
+    <input type="time" name="send_time" value="10:00" required />
+    <textarea data-markdown="true" name="text" placeholder="Текст сообщения в сегмент" required></textarea>
+    <button id="segment-submit-btn" type="submit">Создать сегмент</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Список сегментов</h3>
+  {% if segments %}
+  <div class="table-wrap">
+    <table>
+      <tr><th>ID</th><th>Сегмент</th><th>Шаг</th><th>Задержка (дни)</th><th>Повторов/7д</th><th>Время</th><th>Статус</th><th>Действие</th></tr>
+      {% for s in segments %}
+      {% set rule = (segment_rules | selectattr("segment_id", "equalto", s.id) | list | first) %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.name }}</td>
+        <td>{{ s.scenario_ref }}</td>
+        <td>{{ rule.delay_days if rule else "-" }}</td>
+        <td>{{ rule.weekly_limit if rule else "-" }}</td>
+        <td>{{ rule.send_time if rule else "-" }}</td>
+        <td>{{ "Активен" if s.is_active else "Пауза" }}</td>
+        <td>
+          <button type="button" class="btn-secondary" onclick="editSegment(
+            '{{ s.id }}',
+            '{{ (rule.id if rule else '') }}',
+            '{{ s.name|e }}',
+            '{{ s.scenario_ref|e }}',
+            '{{ (rule.delay_days if rule else 3) }}',
+            '{{ (rule.weekly_limit if rule else 1) }}',
+            '{{ (rule.send_time if rule else "10:00") }}',
+            '{{ (rule.message_text if rule else "")|e }}'
+          )">Редактировать</button>
+          <form method="post" action="/users/segment/toggle" style="display:inline">
+            <input type="hidden" name="segment_id" value="{{ s.id }}" />
+            <input type="hidden" name="is_active" value="{{ 0 if s.is_active else 1 }}" />
+            <button type="submit">{{ "Пауза" if s.is_active else "Запустить" }}</button>
+          </form>
+          <form method="post" action="/users/segment/delete" style="display:inline" onsubmit="return confirm('Удалить сегмент?')">
+            <input type="hidden" name="segment_id" value="{{ s.id }}" />
+            <button type="submit">Удалить</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Сегментов пока нет.</p>
+  {% endif %}
+</div>
+
+<script>
+function editSegment(id, ruleId, name, stepRef, delay, weekly, sendTime, text) {
+  document.getElementById('segment-id-input').value = id || '';
+  document.getElementById('segment-rule-id-input').value = ruleId || '';
+  document.querySelector('input[name="segment_name"]').value = name || '';
+  document.querySelector('input[name="step_ref"]').value = stepRef || '';
+  document.querySelector('input[name="delay_days"]').value = delay || 3;
+  document.querySelector('input[name="weekly_limit"]').value = weekly || 1;
+  document.querySelector('input[name="send_time"]').value = sendTime || '10:00';
+  document.querySelector('textarea[name="text"]').value = text || '';
+  document.getElementById('segment-submit-btn').textContent = 'Сохранить сегмент';
+  document.querySelector('textarea[name="text"]').dispatchEvent(new Event('input'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+{% endblock %}
