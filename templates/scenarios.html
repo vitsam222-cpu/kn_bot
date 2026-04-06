@@ -204,8 +204,31 @@ function buildButtonsJson(prefix) {
     })
     .filter(Boolean);
 
+  const packedRows = [];
+  let currentShortRow = [];
+  buttons.forEach((button) => {
+    const textLength = String(button.text || '').trim().length;
+    if (textLength > 18) {
+      if (currentShortRow.length) {
+        packedRows.push(currentShortRow);
+        currentShortRow = [];
+      }
+      packedRows.push([button]);
+      return;
+    }
+
+    currentShortRow.push(button);
+    if (currentShortRow.length === 2) {
+      packedRows.push(currentShortRow);
+      currentShortRow = [];
+    }
+  });
+  if (currentShortRow.length) {
+    packedRows.push(currentShortRow);
+  }
+
   const hidden = document.getElementById(`${prefix}-buttons-json`);
-  hidden.value = buttons.length ? JSON.stringify([buttons], null, 0) : '';
+  hidden.value = packedRows.length ? JSON.stringify(packedRows, null, 0) : '';
 }
 
 function onScenarioSubmit(event) {
