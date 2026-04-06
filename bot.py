@@ -70,13 +70,24 @@ async def send_scenario_message(message: Message, scenario: dict, user_id: int |
             )
             return
         except Exception:
-            # fallback to text if image sending fails
             db.log_error(
                 source="bot:send_scenario_photo",
                 message="Failed to send scenario photo with parse_mode=HTML",
                 details=traceback.format_exc(),
             )
-            pass
+            try:
+                await message.answer_photo(
+                    photo=FSInputFile(image_path),
+                    caption=scenario["bot_reply_text"],
+                    reply_markup=markup,
+                )
+                return
+            except Exception:
+                db.log_error(
+                    source="bot:send_scenario_photo_plain",
+                    message="Failed to send scenario photo without parse_mode",
+                    details=traceback.format_exc(),
+                )
     try:
         await message.answer(markdown_to_html(scenario["bot_reply_text"]), reply_markup=markup, parse_mode="HTML")
     except Exception:
