@@ -63,6 +63,12 @@ class ApiLikeTests(unittest.TestCase):
         self.assertEqual(row["segment_type"], "tag")
         self.assertEqual(row["segment_value"], "vip")
 
+    def test_logs_page_renders(self):
+        req = DummyRequest()
+        admin.db.log_error("test", "oops", "trace")
+        response = asyncio.run(admin.logs_page(req))
+        self.assertEqual(response.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

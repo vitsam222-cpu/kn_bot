@@ -172,6 +172,14 @@ class Database:
                     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
+                CREATE TABLE IF NOT EXISTS error_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    details TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen_at);
                 CREATE INDEX IF NOT EXISTS idx_blacklist_user ON blacklist(user_id);
                 CREATE INDEX IF NOT EXISTS idx_user_tags_tag_user ON user_tags(tag, user_id);
@@ -183,6 +191,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_segment_campaign_rules_segment_active ON segment_campaign_rules(segment_id, is_active);
                 CREATE INDEX IF NOT EXISTS idx_segments_active ON segments(is_active);
                 CREATE INDEX IF NOT EXISTS idx_segment_campaign_log_rule_user_time ON segment_campaign_log(rule_id, user_id, sent_at);
+                CREATE INDEX IF NOT EXISTS idx_error_logs_created_at ON error_logs(created_at);
                 """
             )
             scenario_columns = {
@@ -1150,6 +1159,22 @@ class Database:
                 (task_type, json.dumps(payload or {}, ensure_ascii=False), message),
             )
             return int(cur.lastrowid)
+
+    def log_error(self, source: str, message: str, details: str | None = None) -> int:
+        with self.connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO error_logs(source, message, details) VALUES(?, ?, ?)",
+                (source.strip()[:120] or "unknown", message.strip()[:500] or "error", details),
+            )
+            return int(cur.lastrowid)
+
+    def get_error_logs(self, limit: int = 500) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM error_logs ORDER BY id DESC LIMIT ?",
+                (max(1, limit),),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_queued_tasks(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.connect() as conn:

@@ -76,6 +76,14 @@ class DatabaseTests(unittest.TestCase):
         rules = self.db.get_step_broadcast_rules(active_only=False)
         self.assertFalse(any(int(r["id"]) == rule_id for r in rules))
 
+    def test_error_logs_store_datetime_and_message(self):
+        log_id = self.db.log_error(source="test", message="boom", details="trace")
+        logs = self.db.get_error_logs(limit=10)
+        self.assertTrue(any(int(item["id"]) == log_id for item in logs))
+        first = logs[0]
+        self.assertIn("created_at", first)
+        self.assertEqual(first["source"], "test")
+
 
 if __name__ == "__main__":
     unittest.main()

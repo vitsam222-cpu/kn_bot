@@ -3,6 +3,7 @@ import io
 import json
 import asyncio
 import sqlite3
+import traceback
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -66,6 +67,16 @@ def render_template(request: Request, name: str, context: dict[str, Any]):
     shared = {"tasks_pending_count": db.get_pending_tasks_count()}
     merged = {**context, **shared}
     return templates.TemplateResponse(request=request, name=name, context=merged)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    db.log_error(
+        source=f"admin:{request.url.path}",
+        message=str(exc) or "Unhandled exception",
+        details=traceback.format_exc(),
+    )
+    return RedirectResponse(f"/logs?msg={quote_plus('Произошла ошибка. Смотрите вкладку Логи')}", status_code=302)
 
 
 def extract_transitions(scenario: dict[str, Any]) -> list[int]:
@@ -192,6 +203,11 @@ async def send_broadcast(
                     )
             except Exception:
                 failed += 1
+                db.log_error(
+                    source="admin:send_broadcast",
+                    message="Exception during send_broadcast",
+                    details=traceback.format_exc(),
+                )
                 db.log_broadcast_delivery(
                     user_id=user_id,
                     status="failed",
@@ -438,6 +454,11 @@ async def start_scheduler() -> None:
                         db.set_task_status(int(task["id"]), "failed", message="Неизвестный тип задачи")
             except Exception as exc:
                 # keep background loop alive
+                db.log_error(
+                    source="admin:scheduler_loop",
+                    message=str(exc) or "Scheduler loop error",
+                    details=traceback.format_exc(),
+                )
                 print(f"Broadcast scheduler error: {exc}")
             await asyncio.sleep(20)
 
@@ -559,6 +580,11 @@ async def save_scenario(
             scenario_id=parsed_scenario_id,
         )
     except (sqlite3.Error, ValueError):
+        db.log_error(
+            source="admin:scenarios_save",
+            message="Ошибка сохранения шага",
+            details=traceback.format_exc(),
+        )
         return RedirectResponse(f"/scenarios?msg={quote_plus('Ошибка сохранения шага')}", status_code=302)
     return RedirectResponse(f"/scenarios?msg={quote_plus('Шаг сохранен')}", status_code=302)
 
@@ -648,6 +674,17 @@ async def tasks_page(request: Request):
         return RedirectResponse("/", status_code=302)
     tasks = db.get_task_history()
     return render_template(request=request, name="tasks.html", context={"tasks": tasks})
+
+
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page(request: Request):
+    if not is_auth(request):
+        return RedirectResponse("/", status_code=302)
+    return render_template(
+        request=request,
+        name="logs.html",
+        context={"logs": db.get_error_logs(limit=500), "flash_msg": request.query_params.get("msg")},
+    )
 
 
 @app.post("/users/tag")

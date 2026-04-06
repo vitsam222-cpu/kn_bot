@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import traceback
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
@@ -70,10 +71,20 @@ async def send_scenario_message(message: Message, scenario: dict, user_id: int |
             return
         except Exception:
             # fallback to text if image sending fails
+            db.log_error(
+                source="bot:send_scenario_photo",
+                message="Failed to send scenario photo with parse_mode=HTML",
+                details=traceback.format_exc(),
+            )
             pass
     try:
         await message.answer(markdown_to_html(scenario["bot_reply_text"]), reply_markup=markup, parse_mode="HTML")
     except Exception:
+        db.log_error(
+            source="bot:send_scenario_text_html",
+            message="Failed to send scenario text with parse_mode=HTML",
+            details=traceback.format_exc(),
+        )
         await message.answer(scenario["bot_reply_text"], reply_markup=markup)
 
 
@@ -158,6 +169,15 @@ async def main() -> None:
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN не задан в .env")
     await dp.start_polling(bot)
+
+
+@dp.errors()
+async def on_bot_error(event):
+    db.log_error(
+        source="bot:dispatcher",
+        message=str(getattr(event, "exception", None) or "Unhandled bot error"),
+        details=traceback.format_exc(),
+    )
 
 
 if __name__ == "__main__":
