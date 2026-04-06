@@ -943,6 +943,11 @@ class Database:
                 (rule_id,),
             )
 
+    def delete_step_broadcast_rule(self, rule_id: int) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM step_broadcast_log WHERE rule_id = ?", (rule_id,))
+            conn.execute("DELETE FROM step_broadcast_rules WHERE id = ?", (rule_id,))
+
     def set_step_broadcast_rule_active(self, rule_id: int, is_active: bool) -> None:
         with self.connect() as conn:
             conn.execute(

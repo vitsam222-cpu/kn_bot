@@ -71,7 +71,10 @@ async def send_scenario_message(message: Message, scenario: dict, user_id: int |
         except Exception:
             # fallback to text if image sending fails
             pass
-    await message.answer(markdown_to_html(scenario["bot_reply_text"]), reply_markup=markup, parse_mode="HTML")
+    try:
+        await message.answer(markdown_to_html(scenario["bot_reply_text"]), reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        await message.answer(scenario["bot_reply_text"], reply_markup=markup)
 
 
 @dp.message(CommandStart())

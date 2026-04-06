@@ -118,32 +118,6 @@ async def dashboard(request: Request):
         return RedirectResponse("/", status_code=302)
     stats = db.get_stats()
     history = db.get_broadcast_history()
-    raw_drip_rules = db.get_step_broadcast_rules(active_only=False)
-    drip_rules: list[dict[str, Any]] = []
-    for rule in raw_drip_rules:
-        scenario_id = db.resolve_scenario_ref(str(rule.get("scenario_ref", "")).strip())
-        if scenario_id and int(rule.get("is_active") or 0) == 1:
-            due_users = db.get_due_users_for_step_rule_detailed(
-                rule_id=int(rule["id"]),
-                scenario_id=scenario_id,
-                delay_days=int(rule.get("delay_days") or 0),
-                weekly_limit=int(rule.get("weekly_limit") or 1),
-                send_time=str(rule.get("send_time") or "00:00"),
-                required_tag=(rule.get("required_tag") or None),
-                limit=30,
-            )
-            next_trigger_at = db.get_rule_next_trigger_at(
-                scenario_id=scenario_id, delay_days=int(rule.get("delay_days") or 0)
-            )
-        else:
-            due_users = []
-            next_trigger_at = None
-        rule_view = dict(rule)
-        rule_view["due_users"] = due_users
-        rule_view["due_count"] = len(due_users)
-        rule_view["next_trigger_at"] = next_trigger_at
-        drip_rules.append(rule_view)
-    scenarios = db.get_all_scenarios()
     all_tags = db.get_all_tags()
     flash_msg = request.query_params.get("msg")
     return render_template(
@@ -154,8 +128,6 @@ async def dashboard(request: Request):
             "broadcast_history": history,
             "timezone_options": TIMEZONE_OPTIONS,
             "flash_msg": flash_msg,
-            "drip_rules": drip_rules,
-            "scenarios": scenarios,
             "all_tags": all_tags,
         },
     )
@@ -355,8 +327,8 @@ async def create_step_rule(
 async def delete_step_rule(request: Request, rule_id: int = Form(...)):
     if not is_auth(request):
         return RedirectResponse("/", status_code=302)
-    db.deactivate_step_broadcast_rule(rule_id)
-    return RedirectResponse(f"/dashboard?msg={quote_plus('Правило автодожима удалено')}", status_code=302)
+    db.delete_step_broadcast_rule(rule_id)
+    return RedirectResponse(f"/segments?msg={quote_plus('Правило автодожима удалено')}", status_code=302)
 
 
 @app.post("/broadcast/rule/toggle")

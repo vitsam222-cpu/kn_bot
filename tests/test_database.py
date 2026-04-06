@@ -61,6 +61,21 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(pending[0]["segment_type"], "step")
         self.assertEqual(pending[0]["segment_step_ref"], "2")
 
+    def test_delete_step_broadcast_rule_hard_delete(self):
+        rule_id = self.db.upsert_step_broadcast_rule(
+            segment_name=None,
+            scenario_ref="1",
+            delay_days=1,
+            weekly_limit=1,
+            send_time="10:00",
+            required_tag=None,
+            message_text="legacy",
+        )
+        self.db.log_step_rule_delivery(rule_id, 1001)
+        self.db.delete_step_broadcast_rule(rule_id)
+        rules = self.db.get_step_broadcast_rules(active_only=False)
+        self.assertFalse(any(int(r["id"]) == rule_id for r in rules))
+
 
 if __name__ == "__main__":
     unittest.main()
